@@ -184,11 +184,25 @@ const Dashboard = ({ onLogout, token }) => {
     const excludedTags = [
       'Auto Reply', 'VIP', 'Pre-order', 'Order Edited', 'No AI', 
       'AI Error', 'Other', 'Chatbot', 'Auto Resolved', 'Chatbot solved', 'Out of Office', 'Spam',
-      'Returns - ParcelFeeder', 'Returns - ColliFlow'
+      'Returns - ParcelFeeder', 'Returns - ColliFlow', '✨ Auto Reply', 'Out Of Office', 'chatbot'
     ];
     
+    // Create a case-insensitive exclusion check
+    const isExcluded = (tagName) => {
+      // Check exact match first
+      if (excludedTags.includes(tagName)) return true;
+      
+      // Then check case-insensitive match
+      return excludedTags.some(excluded => 
+        tagName.toLowerCase() === excluded.toLowerCase() ||
+        tagName.toLowerCase().includes('auto') ||
+        tagName.toLowerCase().includes('chatbot') ||
+        tagName.toLowerCase().includes('office')
+      );
+    };
+    
     return Object.entries(dashboardData.tags.tags)
-      .filter(([name]) => !excludedTags.includes(name))
+      .filter(([name]) => !isExcluded(name))
       .map(([name, count]) => ({ name, value: count }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
