@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap } from 'lucide-react';
+import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap, Plus, X } from 'lucide-react';
+import BrandForm from './BrandForm';
 
 const Dashboard = ({ onLogout, token }) => {
   const [brands, setBrands] = useState([]);
-  const [selectedBrand, setSelectedBrand] = useState(null);
   const [dateRange, setDateRange] = useState('7d');
   const [loading, setLoading] = useState(true);
+  const [showAddBrand, setShowAddBrand] = useState(false);
   const [dashboardData, setDashboardData] = useState({
     channelSummary: null,
     tags: null,
@@ -14,11 +15,13 @@ const Dashboard = ({ onLogout, token }) => {
     responseTime: null,
     volume: null
   });
+  const [error, setError] = useState(null);
 
   // Fetch brands on component mount
   useEffect(() => {
     const fetchBrands = async () => {
       try {
+        setError(null);
         const response = await fetch('/api/brands', {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -31,26 +34,20 @@ const Dashboard = ({ onLogout, token }) => {
 
         const data = await response.json();
         setBrands(data);
-        
-        if (data.length > 0) {
-          setSelectedBrand(data[0].id);
-        }
       } catch (error) {
         console.error('Error fetching brands:', error);
-      } finally {
-        setLoading(false);
+        setError('Failed to load brands. Please check your connection and try again.');
       }
     };
 
     fetchBrands();
   }, [token]);
 
-  // Fetch dashboard data when selected brand changes
+  // Fetch dashboard data when date range changes
   useEffect(() => {
-    if (!selectedBrand) return;
-
     const fetchDashboardData = async () => {
       setLoading(true);
+      setError(null);
       
       try {
         // Calculate date range
@@ -73,22 +70,27 @@ const Dashboard = ({ onLogout, token }) => {
 
         // Fetch all reports in parallel
         const [channelRes, tagsRes, staffRes, responseTimeRes, volumeRes] = await Promise.all([
-          fetch(`/api/channel-summary/${selectedBrand}?start_date=${startDate}&end_date=${endDate}`, {
+          fetch(`/api/channel-summary?start_date=${startDate}&end_date=${endDate}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch(`/api/tags/${selectedBrand}?start_date=${startDate}&end_date=${endDate}`, {
+          fetch(`/api/tags?start_date=${startDate}&end_date=${endDate}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch(`/api/staff/${selectedBrand}?start_date=${startDate}&end_date=${endDate}`, {
+          fetch(`/api/staff?start_date=${startDate}&end_date=${endDate}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch(`/api/response-time/${selectedBrand}?start_date=${startDate}&end_date=${endDate}`, {
+          fetch(`/api/response-time?start_date=${startDate}&end_date=${endDate}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch(`/api/volume/${selectedBrand}?start_date=${startDate}&end_date=${endDate}`, {
+          fetch(`/api/volume?start_date=${startDate}&end_date=${endDate}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           })
         ]);
+
+        // Check if any requests failed
+        if (!channelRes.ok || !tagsRes.ok || !staffRes.ok || !responseTimeRes.ok || !volumeRes.ok) {
+          throw new Error('Failed to fetch some data from Re:Amaze API');
+        }
 
         // Process responses
         const channelData = await channelRes.json();
@@ -106,13 +108,42 @@ const Dashboard = ({ onLogout, token }) => {
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        setError('Failed to load dashboard data. Please check your connection and try again.');
       } finally {
         setLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [selectedBrand, dateRange, token]);
+  }, [dateRange, token]);
+
+  const handleAddBrand = (newBrand) => {
+    setBrands([...brands, newBrand]);
+    setShowAddBrand(false);
+  };
+
+  const handleDeleteBrand = async (id) => {
+    if (window.confirm('Are you sure you want to remove this brand?')) {
+      try {
+        const response = await fetch(`/api/brands/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to delete brand');
+        }
+
+        // Remove brand from state
+        setBrands(brands.filter(brand => brand.id !== id));
+      } catch (error) {
+        console.error('Error deleting brand:', error);
+        alert('Failed to delete brand. Please try again.');
+      }
+    }
+  };
 
   // Process data for charts
   const processVolumeData = () => {
@@ -169,34 +200,21 @@ const Dashboard = ({ onLogout, token }) => {
   };
 
   const getAverageSatisfaction = () => {
-    if (!dashboardData.channelSummary || !dashboardData.channelSummary.channels) return 'N/A';
+    if (!dashboardData.channelSummary || !dashboardData.channelSummary.aggregated) return 'N/A';
     
-    let totalSatisfaction = 0;
-    let channelCount = 0;
-    
-    Object.values(dashboardData.channelSummary.channels).forEach(channel => {
-      if (channel.average_satisfaction_rating) {
-        totalSatisfaction += channel.average_satisfaction_rating;
-        channelCount++;
-      }
-    });
-    
-    return channelCount > 0 ? (totalSatisfaction / channelCount).toFixed(1) : 'N/A';
+    return dashboardData.channelSummary.aggregated.average_satisfaction_rating.toFixed(1);
   };
 
   const getActiveTickets = () => {
-    if (!dashboardData.channelSummary || !dashboardData.channelSummary.channels) return 'N/A';
+    if (!dashboardData.channelSummary || !dashboardData.channelSummary.aggregated) return 'N/A';
     
-    return Object.values(dashboardData.channelSummary.channels).reduce(
-      (sum, channel) => sum + (channel.active_conversations || 0), 
-      0
-    );
+    return dashboardData.channelSummary.aggregated.active_conversations;
   };
 
   // Chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
-  if (loading && !selectedBrand) {
+  if (loading && !brands.length) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-xl">Loading...</div>
@@ -211,23 +229,6 @@ const Dashboard = ({ onLogout, token }) => {
           <h1 className="text-2xl font-bold text-gray-800">Re:Amaze Dashboard</h1>
           
           <div className="flex items-center space-x-4">
-            <div>
-              <select 
-                className="border rounded px-3 py-1 text-sm"
-                value={selectedBrand || ''}
-                onChange={(e) => setSelectedBrand(e.target.value)}
-                disabled={brands.length === 0}
-              >
-                {brands.length === 0 ? (
-                  <option>No brands available</option>
-                ) : (
-                  brands.map(brand => (
-                    <option key={brand.id} value={brand.id}>{brand.name}</option>
-                  ))
-                )}
-              </select>
-            </div>
-            
             <div>
               <select 
                 className="border rounded px-3 py-1 text-sm"
@@ -251,7 +252,53 @@ const Dashboard = ({ onLogout, token }) => {
       </header>
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {loading ? (
+        {/* Brands management */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Configured Brands</h2>
+            <button 
+              onClick={() => setShowAddBrand(!showAddBrand)}
+              className="flex items-center text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+            >
+              {showAddBrand ? <X size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
+              {showAddBrand ? 'Cancel' : 'Add Brand'}
+            </button>
+          </div>
+
+          {showAddBrand && (
+            <div className="mb-4">
+              <BrandForm token={token} onBrandAdded={handleAddBrand} onCancel={() => setShowAddBrand(false)} />
+            </div>
+          )}
+
+          <div className="bg-white rounded-lg shadow p-4">
+            {brands.length === 0 ? (
+              <p className="text-gray-500">No brands configured. Add your first Re:Amaze brand to start.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {brands.map(brand => (
+                  <div key={brand.id} className="border rounded p-3 relative">
+                    <button 
+                      onClick={() => handleDeleteBrand(brand.id)}
+                      className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
+                    >
+                      <X size={16} />
+                    </button>
+                    <h3 className="font-medium mb-1">{brand.name}</h3>
+                    <p className="text-sm text-gray-500">{brand.url}.reamaze.io</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error ? (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+            <p className="font-bold">Error</p>
+            <p>{error}</p>
+          </div>
+        ) : loading ? (
           <div className="text-center py-10">
             <div className="text-xl">Loading dashboard data...</div>
           </div>
