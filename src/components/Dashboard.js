@@ -169,14 +169,15 @@ const Dashboard = ({ onLogout, token }) => {
   const processResponseTimeData = () => {
     if (!dashboardData.responseTime || !dashboardData.responseTime.response_times) return [];
     
-    // Convert to array format for the chart and convert seconds to minutes
+    // Convert to array format for the chart and convert seconds to hours
     return Object.entries(dashboardData.responseTime.response_times)
       .map(([date, seconds]) => ({
         date,
-        minutes: Math.round(seconds / 60)
+        hours: (seconds / 3600).toFixed(2) // Convert seconds to hours with 2 decimal places
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
   };
+  
 
   const processTagsData = () => {
     if (!dashboardData.tags || !dashboardData.tags.tags) return [];
@@ -264,7 +265,8 @@ const Dashboard = ({ onLogout, token }) => {
     
     const avgSeconds = dashboardData.responseTime.summary.averages.in_range;
     if (avgSeconds < 60) return `${avgSeconds} sec`;
-    return `${Math.round(avgSeconds / 60)} min`;
+    if (avgSeconds < 3600) return `${Math.round(avgSeconds / 60)} min`;
+    return `${(avgSeconds / 3600).toFixed(2)} hr`; // Show in hours with 2 decimal places
   };
 
   const getResponseTimeChange = () => {
@@ -528,15 +530,15 @@ const Dashboard = ({ onLogout, token }) => {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={processResponseTimeData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip formatter={(value) => [`${value} min`, 'Response Time']} />
-              <Legend />
-              <Line type="monotone" dataKey="minutes" stroke="#0088FE" name="Response Time (minutes)" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <LineChart data={processResponseTimeData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip formatter={(value) => [`${value} hr`, 'Response Time']} />
+            <Legend />
+            <Line type="monotone" dataKey="hours" stroke="#0088FE" name="Response Time (hours)" strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
         </div>
         
         {/* Number of Tickets Section */}
@@ -621,17 +623,22 @@ const Dashboard = ({ onLogout, token }) => {
                       data={processTagsData()}
                       cx="50%"
                       cy="50%"
-                      labelLine={false}
-                      outerRadius={80}
+                      labelLine={true}
+                      outerRadius={70}
                       fill="#8884d8"
                       dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent }) => {
+                        // Truncate long names to prevent overlap
+                        const shortName = name.length > 12 ? name.substring(0, 10) + '...' : name;
+                        return `${shortName} ${(percent * 100).toFixed(0)}%`;
+                      }}
                     >
                       {processTagsData().map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip formatter={(value, name) => [value, name]} />
+                    <Legend layout="vertical" verticalAlign="bottom" align="center" />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
