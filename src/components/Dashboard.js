@@ -28,6 +28,14 @@ const Dashboard = ({ onLogout, token }) => {
   const [memoizedTagsData, setMemoizedTagsData] = useState([]);
   const [fetchTimeout, setFetchTimeout] = useState(null);
   const [activeTagIndex, setActiveTagIndex] = useState(null);
+  const [comparisonMode, setComparisonMode] = useState(true); // Set to true by default
+  const [prevPeriodData, setPrevPeriodData] = useState({
+    channelSummary: null,
+    tags: null,
+    staff: null,
+    responseTime: null,
+    volume: null
+  });
 
   // Fetch brands on component mount
   useEffect(() => {
@@ -55,7 +63,42 @@ const Dashboard = ({ onLogout, token }) => {
     fetchBrands();
   }, [token]);
 
-  // Fetch dashboard data when date range changes
+  // Function that automatically calculates the previous period dates based on the selected date range
+  const getAutoPreviousPeriodDates = (currentStart, currentEnd) => {
+    const startDate = new Date(currentStart);
+    const endDate = new Date(currentEnd);
+    const daysDiff = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
+    
+    // Create a previous period that matches the current period pattern
+    let prevStartDate = new Date(startDate);
+    let prevEndDate = new Date(endDate);
+    
+    // For month, quarter, or ytd we need to go back by periods, not just days
+    if (dateRange === 'month') {
+      // Previous month
+      prevStartDate.setMonth(prevStartDate.getMonth() - 1);
+      prevEndDate.setMonth(prevEndDate.getMonth() - 1);
+    } else if (dateRange === 'quarter') {
+      // Previous quarter (go back 3 months)
+      prevStartDate.setMonth(prevStartDate.getMonth() - 3);
+      prevEndDate.setMonth(prevEndDate.getMonth() - 3);
+    } else if (dateRange === 'ytd') {
+      // Previous year's same period
+      prevStartDate.setFullYear(prevStartDate.getFullYear() - 1);
+      prevEndDate.setFullYear(prevEndDate.getFullYear() - 1);
+    } else {
+      // For 7d and 30d, simply go back by the number of days
+      prevStartDate.setDate(prevStartDate.getDate() - daysDiff);
+      prevEndDate.setDate(prevEndDate.getDate() - daysDiff);
+    }
+    
+    return {
+      startDate: prevStartDate.toISOString().split('T')[0],
+      endDate: prevEndDate.toISOString().split('T')[0]
+    };
+  };
+
+  // Fetch dashboard data when date range changes or comparison mode toggles
   useEffect(() => {
     const fetchDashboardData = async () => {
       // Clear any pending fetch
@@ -63,14 +106,12 @@ const Dashboard = ({ onLogout, token }) => {
         clearTimeout(fetchTimeout);
       }
       
-      // Set loading status and clear error
       setLoading(true);
       setError(null);
       
-      // Use setTimeout to debounce fetch operations
       const timeoutId = setTimeout(async () => {
         try {
-          // Calculate date range
+          // Calculate current period date range
           const endDate = new Date().toISOString().split('T')[0];
           let startDate;
           
@@ -86,9 +127,20 @@ const Dashboard = ({ onLogout, token }) => {
             const date = new Date();
             date.setDate(1);
             startDate = date.toISOString().split('T')[0];
+          } else if (dateRange === 'quarter') {
+            const date = new Date();
+            const month = date.getMonth();
+            date.setMonth(month - (month % 3));
+            date.setDate(1);
+            startDate = date.toISOString().split('T')[0];
+          } else if (dateRange === 'ytd') {
+            const date = new Date();
+            date.setMonth(0);
+            date.setDate(1);
+            startDate = date.toISOString().split('T')[0];
           }
-
-          // Fetch all reports in parallel
+  
+          // Fetch current period data
           const [channelRes, tagsRes, staffRes, responseTimeRes, volumeRes] = await Promise.all([
             fetch(`/api/channel-summary?start_date=${startDate}&end_date=${endDate}`, {
               headers: { 'Authorization': `Bearer ${token}` }
@@ -106,19 +158,19 @@ const Dashboard = ({ onLogout, token }) => {
               headers: { 'Authorization': `Bearer ${token}` }
             })
           ]);
-
-          // Check if any requests failed
+  
+          // Check for any errors in fetching data
           if (!channelRes.ok || !tagsRes.ok || !staffRes.ok || !responseTimeRes.ok || !volumeRes.ok) {
             throw new Error('Failed to fetch some data from Re:Amaze API');
           }
 
-          // Process responses
+          // Process current period data
           const channelData = await channelRes.json();
           const tagsData = await tagsRes.json();
           const staffData = await staffRes.json();
           const responseTimeData = await responseTimeRes.json();
           const volumeData = await volumeRes.json();
-
+  
           setDashboardData({
             channelSummary: channelData,
             tags: tagsData,
@@ -127,7 +179,61 @@ const Dashboard = ({ onLogout, token }) => {
             volume: volumeData
           });
           
-          // Reset memoized data when new data comes in
+          // If comparison mode is enabled, fetch previous period data automatically
+          if (comparisonMode) {
+            const prevPeriod = getAutoPreviousPeriodDates(startDate, endDate);
+            
+            try {
+              const [prevChannelRes, prevTagsRes, prevStaffRes, prevResponseTimeRes, prevVolumeRes] = await Promise.all([
+                fetch(`/api/channel-summary?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`/api/tags?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`/api/staff?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`/api/response-time?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`/api/volume?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                })
+              ]);
+              
+              if (!prevChannelRes.ok || !prevTagsRes.ok || !prevStaffRes.ok || 
+                  !prevResponseTimeRes.ok || !prevVolumeRes.ok) {
+                throw new Error('Failed to fetch comparison data');
+              }
+              
+              // Process previous period data
+              const prevChannelData = await prevChannelRes.json();
+              const prevTagsData = await prevTagsRes.json();
+              const prevStaffData = await prevStaffRes.json();
+              const prevResponseTimeData = await prevResponseTimeRes.json();
+              const prevVolumeData = await prevVolumeRes.json();
+              
+              setPrevPeriodData({
+                channelSummary: prevChannelData,
+                tags: prevTagsData,
+                staff: prevStaffData,
+                responseTime: prevResponseTimeData,
+                volume: prevVolumeData
+              });
+            } catch (compError) {
+              console.error('Error fetching comparison data:', compError);
+              // We don't show error for comparison data, just reset it
+              setPrevPeriodData({
+                channelSummary: null,
+                tags: null,
+                staff: null,
+                responseTime: null,
+                volume: null
+              });
+            }
+          }
+          
           setMemoizedTagsData([]);
         } catch (error) {
           console.error('Error fetching dashboard data:', error);
@@ -135,13 +241,13 @@ const Dashboard = ({ onLogout, token }) => {
         } finally {
           setLoading(false);
         }
-      }, 300); // 300ms debounce
+      }, 300);
       
       setFetchTimeout(timeoutId);
     };
-
+  
     fetchDashboardData();
-  }, [dateRange, token]);
+  }, [dateRange, token, comparisonMode]);
 
   const handleAddBrand = (newBrand) => {
     setBrands([...brands, newBrand]);
@@ -171,11 +277,10 @@ const Dashboard = ({ onLogout, token }) => {
     }
   };
 
-  // Process data for charts - using only real data
+  // Process data for charts - Using enhanced data processing methods
   const processVolumeData = () => {
     if (!dashboardData.volume || !dashboardData.volume.conversation_counts) return [];
     
-    // Convert to array format for the chart
     return Object.entries(dashboardData.volume.conversation_counts)
       .map(([date, count]) => ({
         date,
@@ -184,16 +289,117 @@ const Dashboard = ({ onLogout, token }) => {
       .sort((a, b) => a.date.localeCompare(b.date));
   };
 
+  // Enhanced volume data processing to include previous period data
+  const processVolumeDataWithComparison = () => {
+    const currentData = processVolumeData();
+    
+    if (!comparisonMode || !prevPeriodData.volume || !prevPeriodData.volume.conversation_counts) {
+      return currentData;
+    }
+    
+    // Process previous period data
+    const prevDataMap = new Map();
+    Object.entries(prevPeriodData.volume.conversation_counts)
+      .forEach(([date, count]) => {
+        prevDataMap.set(date, count);
+      });
+    
+    // Create a sequence of dates for proper alignment
+    const dateSequence = generateDateSequence(currentData);
+    
+    // Map previous data to the corresponding position in the current period
+    const result = currentData.map((item, index) => {
+      const prevDate = dateSequence[index] ? dateSequence[index] : null;
+      const prevCount = prevDate && prevDataMap.has(prevDate) ? prevDataMap.get(prevDate) : 0;
+      
+      return {
+        ...item,
+        prevCount
+      };
+    });
+    
+    return result;
+  };
+
+  // Helper to generate a sequence of dates for the previous period that aligns with current period
+  const generateDateSequence = (currentData) => {
+    if (!prevPeriodData.volume || !prevPeriodData.volume.conversation_counts) {
+      return [];
+    }
+    
+    // Get all dates from previous period, sorted
+    const prevDates = Object.keys(prevPeriodData.volume.conversation_counts).sort();
+    
+    // If we have equal number of dates, just return the sorted previous dates
+    if (prevDates.length === currentData.length) {
+      return prevDates;
+    }
+    
+    // For unequal lengths, we need more sophisticated alignment
+    // For simplicity, we'll just return the available dates and pad with nulls
+    return prevDates.slice(0, currentData.length);
+  };
+
   const processResponseTimeData = () => {
     if (!dashboardData.responseTime || !dashboardData.responseTime.response_times) return [];
     
-    // Convert to array format for the chart and convert seconds to hours
     return Object.entries(dashboardData.responseTime.response_times)
       .map(([date, seconds]) => ({
         date,
         hours: (seconds / 3600).toFixed(2) // Convert seconds to hours with 2 decimal places
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
+  };
+
+  // Enhanced response time data processing to include previous period data
+  const processResponseTimeDataWithComparison = () => {
+    const currentData = processResponseTimeData();
+    
+    if (!comparisonMode || !prevPeriodData.responseTime || !prevPeriodData.responseTime.response_times) {
+      return currentData;
+    }
+    
+    // Process previous period data
+    const prevDataMap = new Map();
+    Object.entries(prevPeriodData.responseTime.response_times)
+      .forEach(([date, seconds]) => {
+        prevDataMap.set(date, (seconds / 3600).toFixed(2)); // Convert to hours
+      });
+    
+    // Create a sequence of dates for proper alignment
+    const dateSequence = generateResponseTimeDateSequence(currentData);
+    
+    // Map previous data to the corresponding position in the current period
+    const result = currentData.map((item, index) => {
+      const prevDate = dateSequence[index] ? dateSequence[index] : null;
+      const prevHours = prevDate && prevDataMap.has(prevDate) ? prevDataMap.get(prevDate) : null;
+      
+      return {
+        ...item,
+        prevHours
+      };
+    });
+    
+    return result;
+  };
+
+  // Helper to generate a sequence of dates for response time data
+  const generateResponseTimeDateSequence = (currentData) => {
+    if (!prevPeriodData.responseTime || !prevPeriodData.responseTime.response_times) {
+      return [];
+    }
+    
+    // Get all dates from previous period, sorted
+    const prevDates = Object.keys(prevPeriodData.responseTime.response_times).sort();
+    
+    // If we have equal number of dates, just return the sorted previous dates
+    if (prevDates.length === currentData.length) {
+      return prevDates;
+    }
+    
+    // For unequal lengths, we need more sophisticated alignment
+    // For simplicity, we'll just return the available dates and pad with nulls
+    return prevDates.slice(0, currentData.length);
   };
   
   // Optimized processTagsData function with memoization
@@ -242,6 +448,35 @@ const Dashboard = ({ onLogout, token }) => {
     return processed;
   };
 
+  // Process tags data with comparison to the previous period
+  const processTagsDataWithComparison = () => {
+    const currentTags = processTagsData();
+    
+    if (!comparisonMode || !prevPeriodData.tags || !prevPeriodData.tags.tags) {
+      return currentTags;
+    }
+    
+    // Create a map of previous period tags for easy lookup
+    const prevTagsMap = new Map();
+    Object.entries(prevPeriodData.tags.tags)
+      .forEach(([name, count]) => {
+        prevTagsMap.set(name, count);
+      });
+    
+    // Add comparison data to current tags
+    return currentTags.map(tag => {
+      const prevValue = prevTagsMap.has(tag.name) ? prevTagsMap.get(tag.name) : 0;
+      const change = prevValue > 0 ? ((tag.value - prevValue) / prevValue) * 100 : null;
+      
+      return {
+        ...tag,
+        prevValue,
+        change: change !== null ? Math.round(change) : null,
+        increased: change > 0
+      };
+    });
+  };
+
   const processStaffData = () => {
     if (!dashboardData.staff || !dashboardData.staff.report) return [];
     
@@ -256,6 +491,42 @@ const Dashboard = ({ onLogout, token }) => {
       .slice(0, 5);
   };
 
+  // Process staff data with comparison to previous period
+  const processStaffDataWithComparison = () => {
+    const currentStaff = processStaffData();
+    
+    if (!comparisonMode || !prevPeriodData.staff || !prevPeriodData.staff.report) {
+      return currentStaff;
+    }
+    
+    // Create a map of previous period staff data for easy lookup
+    const prevStaffMap = new Map();
+    Object.entries(prevPeriodData.staff.report)
+      .forEach(([name, data]) => {
+        prevStaffMap.set(name, {
+          responseCount: data.response_count || 0,
+          appreciations: data.appreciations_count || 0,
+          responseTime: data.response_time_seconds ? Math.round(data.response_time_seconds / 60) : 0
+        });
+      });
+    
+    // Add comparison data to current staff
+    return currentStaff.map(staff => {
+      const prevData = prevStaffMap.has(staff.name) ? prevStaffMap.get(staff.name) : null;
+      
+      return {
+        ...staff,
+        prevResponseCount: prevData ? prevData.responseCount : 0,
+        prevAppreciations: prevData ? prevData.appreciations : 0,
+        prevResponseTime: prevData ? prevData.responseTime : 0,
+        responseCountChange: prevData && prevData.responseCount > 0 
+          ? Math.round(((staff.responseCount - prevData.responseCount) / prevData.responseCount) * 100) 
+          : null,
+        responseTimeImproved: prevData ? staff.responseTime < prevData.responseTime : false
+      };
+    });
+  };
+
   const processChannelData = () => {
     if (!dashboardData.channelSummary || !dashboardData.channelSummary.channels) return [];
     
@@ -263,7 +534,7 @@ const Dashboard = ({ onLogout, token }) => {
     const channelTypes = {};
     
     // Group by channel type
-    Object.values(channels).forEach(channelData => {
+    Object.entries(channels).forEach(([id, channelData]) => {
       if (channelData.channel && channelData.channel.channel_type_name) {
         const typeName = channelData.channel.channel_type_name;
         if (!channelTypes[typeName]) {
@@ -289,17 +560,34 @@ const Dashboard = ({ onLogout, token }) => {
     }));
   };
 
+  // Helper functions for metrics with comparison support
   const getAverageResponseTime = () => {
     if (!dashboardData.responseTime || 
         !dashboardData.responseTime.summary || 
         !dashboardData.responseTime.summary.averages) {
-      return 'N/A';
+      return { current: 'N/A', change: null };
     }
     
     const avgSeconds = dashboardData.responseTime.summary.averages.in_range;
-    if (avgSeconds < 60) return `${avgSeconds} sec`;
-    if (avgSeconds < 3600) return `${Math.round(avgSeconds / 60)} min`;
-    return `${(avgSeconds / 3600).toFixed(2)} hr`; // Show in hours with 2 decimal places
+    let formattedTime;
+    
+    if (avgSeconds < 60) formattedTime = `${avgSeconds} sec`;
+    else if (avgSeconds < 3600) formattedTime = `${Math.round(avgSeconds / 60)} min`;
+    else formattedTime = `${(avgSeconds / 3600).toFixed(2)} hr`;
+    
+    if (!comparisonMode || 
+        !prevPeriodData.responseTime || 
+        !prevPeriodData.responseTime.summary || 
+        !prevPeriodData.responseTime.summary.averages) {
+      return { current: formattedTime, change: null };
+    }
+    
+    const prevAvgSeconds = prevPeriodData.responseTime.summary.averages.in_range;
+    
+    return {
+      current: formattedTime,
+      change: calculateResponseTimeChange(avgSeconds, prevAvgSeconds)
+    };
   };
 
   const getResponseTimeChange = () => {
@@ -321,10 +609,23 @@ const Dashboard = ({ onLogout, token }) => {
 
   const getTotalTickets = () => {
     if (!dashboardData.volume || !dashboardData.volume.conversation_counts) {
-      return 'N/A';
+      return { current: 'N/A', change: null };
     }
     
-    return Object.values(dashboardData.volume.conversation_counts).reduce((sum, count) => sum + count, 0);
+    const currentTotal = Object.values(dashboardData.volume.conversation_counts)
+      .reduce((sum, count) => sum + count, 0);
+    
+    if (!comparisonMode || !prevPeriodData.volume || !prevPeriodData.volume.conversation_counts) {
+      return { current: currentTotal, change: null };
+    }
+    
+    const prevTotal = Object.values(prevPeriodData.volume.conversation_counts)
+      .reduce((sum, count) => sum + count, 0);
+    
+    return { 
+      current: currentTotal, 
+      change: calculatePercentChange(currentTotal, prevTotal)
+    };
   };
 
   const getAverageSatisfaction = () => {
@@ -332,23 +633,73 @@ const Dashboard = ({ onLogout, token }) => {
         !dashboardData.channelSummary.aggregated || 
         dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
         dashboardData.channelSummary.aggregated.average_satisfaction_rating === null) {
-      return 'N/A';
+      return { current: null, change: null };
     }
     
-    return dashboardData.channelSummary.aggregated.average_satisfaction_rating.toFixed(1);
+    const currentSatisfaction = dashboardData.channelSummary.aggregated.average_satisfaction_rating;
+    
+    if (!comparisonMode || 
+        !prevPeriodData.channelSummary || 
+        !prevPeriodData.channelSummary.aggregated || 
+        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
+        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === null) {
+      return { current: currentSatisfaction.toFixed(1), change: null };
+    }
+    
+    const prevSatisfaction = prevPeriodData.channelSummary.aggregated.average_satisfaction_rating;
+    
+    return {
+      current: currentSatisfaction.toFixed(1),
+      change: calculatePercentChange(currentSatisfaction, prevSatisfaction, true) // CSAT higher is better
+    };
   };
 
   const getActiveTickets = () => {
     if (!dashboardData.channelSummary || 
         !dashboardData.channelSummary.aggregated || 
         dashboardData.channelSummary.aggregated.active_conversations === undefined) {
-      return 'N/A';
+      return { current: 'N/A', change: null };
     }
     
-    return dashboardData.channelSummary.aggregated.active_conversations;
+    const currentActive = dashboardData.channelSummary.aggregated.active_conversations;
+    
+    if (!comparisonMode || 
+        !prevPeriodData.channelSummary || 
+        !prevPeriodData.channelSummary.aggregated || 
+        prevPeriodData.channelSummary.aggregated.active_conversations === undefined) {
+      return { current: currentActive, change: null };
+    }
+    
+    const prevActive = prevPeriodData.channelSummary.aggregated.active_conversations;
+    
+    return {
+      current: currentActive,
+      change: calculatePercentChange(currentActive, prevActive, false) // Active tickets lower is better
+    };
   };
 
-  // Generate summary based only on real data
+  const calculatePercentChange = (current, previous, higherIsBetter = true) => {
+    if (!previous || previous === 0) return null;
+    const change = ((current - previous) / previous) * 100;
+    return {
+      value: Math.abs(Math.round(change)),
+      isPositive: change > 0,
+      isImprovement: higherIsBetter ? change > 0 : change < 0
+    };
+  };
+  
+  // For response time specifically (where lower is better)
+  const calculateResponseTimeChange = (current, previous) => {
+    if (!current || !previous || previous === 0) return null;
+    const change = ((current - previous) / previous) * 100;
+    return {
+      value: Math.abs(Math.round(change)),
+      isPositive: change > 0,
+      isImprovement: change < 0 // For response time, lower is better
+    };
+  };
+  
+  // Generate dashboard summary based on real data
   const generateSummary = () => {
     const responseTimeChange = getResponseTimeChange();
     const topTags = processTagsData();
@@ -376,14 +727,20 @@ const Dashboard = ({ onLogout, token }) => {
           </>
         )}
         
-        {getActiveTickets() !== 'N/A' && (
+        {getActiveTickets().current !== 'N/A' && (
           <>
-            Currently <span className="font-bold text-yellow-300">{getActiveTickets()}</span> active tickets 
+            Currently <span className="font-bold text-yellow-300">{getActiveTickets().current}</span> active tickets 
             require attention.
           </>
         )}
       </span>
     );
+  };
+
+  // Helper function to format percentage change for display
+  const formatPercentChange = (change) => {
+    if (!change) return null;
+    return `${change.isPositive ? '+' : '-'}${change.value}%`;
   };
 
   // Chart colors
@@ -414,6 +771,24 @@ const Dashboard = ({ onLogout, token }) => {
         />
       </g>
     );
+  };
+
+  // Format the date range label for display
+  const getDateRangeLabel = () => {
+    switch (dateRange) {
+      case '7d':
+        return 'Last 7 days';
+      case '30d':
+        return 'Last 30 days';
+      case 'month':
+        return 'This month';
+      case 'quarter':
+        return 'This quarter';
+      case 'ytd':
+        return 'Year to date';
+      default:
+        return 'Selected period';
+    }
   };
 
   if (loading && !brands.length) {
@@ -482,7 +857,18 @@ const Dashboard = ({ onLogout, token }) => {
               <option value="7d">Last 7 days</option>
               <option value="30d">Last 30 days</option>
               <option value="month">This month</option>
+              <option value="quarter">This quarter</option>
+              <option value="ytd">Year to date</option>
             </select>
+            <label className="flex items-center text-sm">
+              <input 
+                type="checkbox" 
+                checked={comparisonMode}
+                onChange={() => setComparisonMode(!comparisonMode)}
+                className="mr-1"
+              />
+              Show comparison
+            </label>
             <button 
               onClick={() => window.location.reload()}
               className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
@@ -498,7 +884,7 @@ const Dashboard = ({ onLogout, token }) => {
           </div>
         </div>
         
-        {/* Summary Box - Using only real data */}
+        {/* Summary Box */}
         <div className="mt-4 bg-blue-600 text-white p-4 rounded-lg shadow">
           <div className="flex items-start">
             <Zap className="text-yellow-300 mr-3 mt-1 flex-shrink-0" size={24} />
@@ -514,44 +900,68 @@ const Dashboard = ({ onLogout, token }) => {
       
       {/* KPI Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        {/* Response Time KPI */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <Clock className="text-blue-500 mr-2" size={20} />
             <h3 className="font-semibold">Avg. Response Time</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">{getAverageResponseTime()}</p>
-          {getResponseTimeChange() && (
-            <p className={`text-sm ${getResponseTimeChange().isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
-              {getResponseTimeChange().isImprovement ? '↓' : '↑'} {getResponseTimeChange().value} from previous period
+          <p className="text-3xl font-bold mt-2">{getAverageResponseTime().current}</p>
+          {comparisonMode && getAverageResponseTime().change && (
+            <p className={`text-sm ${getAverageResponseTime().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getAverageResponseTime().change.isImprovement ? '↓' : '↑'} 
+              {getAverageResponseTime().change.value}% vs previous period
             </p>
           )}
         </div>
         
+        {/* Total Tickets KPI */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <Inbox className="text-purple-500 mr-2" size={20} />
             <h3 className="font-semibold">Total Tickets</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">{getTotalTickets()}</p>
-          <p className="text-sm text-gray-500">For selected period</p>
+          <p className="text-3xl font-bold mt-2">{getTotalTickets().current}</p>
+          {comparisonMode && getTotalTickets().change && (
+            <p className={`text-sm ${getTotalTickets().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getTotalTickets().change.isPositive ? '↑' : '↓'} 
+              {getTotalTickets().change.value}% vs previous period
+            </p>
+          )}
         </div>
         
+        {/* CSAT Score KPI */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <ThumbsUp className="text-green-500 mr-2" size={20} />
             <h3 className="font-semibold">CSAT Score</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">{getAverageSatisfaction()}/5.0</p>
-          <p className="text-sm text-gray-500">Based on customer ratings</p>
+          {getAverageSatisfaction().current !== null ? (
+            <p className="text-3xl font-bold mt-2">{getAverageSatisfaction().current}/5.0</p>
+          ) : (
+            <p className="text-3xl font-bold mt-2">No Data</p>
+          )}
+          {comparisonMode && getAverageSatisfaction().change && (
+            <p className={`text-sm ${getAverageSatisfaction().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getAverageSatisfaction().change.isPositive ? '↑' : '↓'} 
+              {getAverageSatisfaction().change.value}% vs previous period
+            </p>
+          )}
         </div>
         
+        {/* Open Tickets KPI */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <AlertTriangle className="text-yellow-500 mr-2" size={20} />
             <h3 className="font-semibold">Open Tickets</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">{getActiveTickets()}</p>
-          <p className="text-sm text-yellow-500 flex items-center">Require attention</p>
+          <p className="text-3xl font-bold mt-2">{getActiveTickets().current}</p>
+          {comparisonMode && getActiveTickets().change && (
+            <p className={`text-sm ${getActiveTickets().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getActiveTickets().change.isPositive ? '↑' : '↓'} 
+              {getActiveTickets().change.value}% vs previous period
+            </p>
+          )}
         </div>
       </div>
       
@@ -576,8 +986,8 @@ const Dashboard = ({ onLogout, token }) => {
           <div className="mb-4">
             <div className="flex justify-between items-center">
               <div>
-                <p className="text-2xl font-bold">{getAverageResponseTime()}</p>
-                <p className="text-sm text-gray-500">Average ({dateRange === '7d' ? 'Last 7 days' : dateRange === '30d' ? 'Last 30 days' : 'This month'})</p>
+                <p className="text-2xl font-bold">{getAverageResponseTime().current}</p>
+                <p className="text-sm text-gray-500">Average ({getDateRangeLabel()})</p>
               </div>
               {getResponseTimeChange() && (
                 <div className="text-right">
@@ -590,15 +1000,44 @@ const Dashboard = ({ onLogout, token }) => {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={processResponseTimeData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip formatter={(value) => [`${value} hr`, 'Response Time']} />
-            <Legend />
-            <Line type="monotone" dataKey="hours" stroke="#0088FE" name="Response Time (hours)" strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
+            <LineChart 
+              data={comparisonMode ? processResponseTimeDataWithComparison() : processResponseTimeData()} 
+              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis 
+                domain={[0, 'dataMax + 5']} // Dynamically set max with padding
+                allowDataOverflow={false}
+              />
+              <Tooltip 
+                formatter={(value, name) => {
+                  return [
+                    `${value} hr`, 
+                    name === "hours" ? "Current Period" : "Previous Period"
+                  ];
+                }} 
+              />
+              <Legend />
+              <Line 
+                type="monotone" 
+                dataKey="hours" 
+                stroke="#0088FE" 
+                name="Current Period" 
+                strokeWidth={2} 
+              />
+              {comparisonMode && (
+                <Line 
+                  type="monotone" 
+                  dataKey="prevHours" 
+                  stroke="#82ca9d" 
+                  name="Previous Period" 
+                  strokeWidth={2} 
+                  strokeDasharray="3 3"
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
         </div>
         
         {/* Number of Tickets Section */}
@@ -610,24 +1049,38 @@ const Dashboard = ({ onLogout, token }) => {
           <div className="mb-4">
             <div className="flex justify-between items-center">
               <div>
-                <p className="text-2xl font-bold">{getTotalTickets()}</p>
-                <p className="text-sm text-gray-500">Total ({dateRange === '7d' ? 'Last 7 days' : dateRange === '30d' ? 'Last 30 days' : 'This month'})</p>
+                <p className="text-2xl font-bold">{getTotalTickets().current}</p>
+                <p className="text-sm text-gray-500">Total ({getDateRangeLabel()})</p>
               </div>
+              {comparisonMode && getTotalTickets().change && (
+                <div className="text-right">
+                  <p className={getTotalTickets().change.isImprovement ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
+                    {getTotalTickets().change.isPositive ? '↑' : '↓'} {getTotalTickets().change.value}%
+                  </p>
+                  <p className="text-sm text-gray-500">vs Previous period</p>
+                </div>
+              )}
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={processVolumeData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <BarChart 
+              data={comparisonMode ? processVolumeDataWithComparison() : processVolumeData()} 
+              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="count" fill="#8884d8" name="Tickets" />
+              <Bar dataKey="count" fill="#8884d8" name="Current Period" />
+              {comparisonMode && (
+                <Bar dataKey="prevCount" fill="#82ca9d" name="Previous Period" />
+              )}
             </BarChart>
           </ResponsiveContainer>
         </div>
         
-        {/* Staff Performance Section - Using only real data */}
+        {/* Staff Performance Section */}
         <div className="bg-white p-6 rounded shadow">
           <div className="flex items-center mb-4">
             <Users className="text-green-500 mr-2" size={20} />
@@ -645,14 +1098,28 @@ const Dashboard = ({ onLogout, token }) => {
                 </div>
               </div>
               
-              {processStaffData().map((staff, index) => (
+              {(comparisonMode ? processStaffDataWithComparison() : processStaffData()).map((staff, index) => (
                 <div key={index} className="border-b pb-2">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold">{staff.name}</span>
                     <div className="flex space-x-4">
-                      <span className="w-20 text-right">{staff.responseCount}</span>
+                      <span className="w-20 text-right">
+                        {staff.responseCount}
+                        {comparisonMode && staff.responseCountChange !== null && (
+                          <span className={staff.responseCountChange > 0 ? "text-green-500 ml-1" : "text-red-500 ml-1"}>
+                            {staff.responseCountChange > 0 ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </span>
                       <span className="w-20 text-right">{staff.appreciations}</span>
-                      <span className="w-20 text-right">{staff.responseTime} min</span>
+                      <span className="w-20 text-right">
+                        {staff.responseTime} min
+                        {comparisonMode && staff.prevResponseTime > 0 && (
+                          <span className={staff.responseTimeImproved ? "text-green-500 ml-1" : "text-red-500 ml-1"}>
+                            {staff.responseTimeImproved ? '↓' : '↑'}
+                          </span>
+                        )}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -665,7 +1132,7 @@ const Dashboard = ({ onLogout, token }) => {
           )}
         </div>
         
-        {/* What People Ask About Section - Using only real tag data with IMPROVED PIE CHART */}
+        {/* What People Ask About Section */}
         <div className="bg-white p-6 rounded shadow">
           <div className="flex items-center mb-4">
             <MessageSquare className="text-orange-500 mr-2" size={20} />
@@ -735,9 +1202,16 @@ const Dashboard = ({ onLogout, token }) => {
                 <Users size={16} className="mr-1 text-purple-500" /> Top Tags by Volume
               </h3>
               {processTagsData().length > 0 ? (
-                processTagsData().map((tag, index) => (
+                (comparisonMode ? processTagsDataWithComparison() : processTagsData()).map((tag, index) => (
                   <div key={index} className="flex items-center justify-between mb-2">
-                    <div className="text-sm truncate pr-2">{tag.name}</div>
+                    <div className="text-sm truncate pr-2">
+                      {tag.name}
+                      {comparisonMode && tag.change !== null && (
+                        <span className={tag.increased ? "text-green-500 ml-1" : "text-red-500 ml-1"}>
+                          {tag.increased ? '↑' : '↓'}{Math.abs(tag.change)}%
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center">
                       <div className="w-32 bg-gray-200 rounded-full h-2 mr-2">
                         <div 
