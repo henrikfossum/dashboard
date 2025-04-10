@@ -294,13 +294,15 @@ const Dashboard = ({ onLogout, token }) => {
     let totalConversations = 0;
     let aiHandledConversations = 0;
     
-    // Get total conversation volume
+    // Use volume data for total conversations in this period
+    // This gives us the most accurate count of new conversations
     if (volumeData && volumeData.conversation_counts) {
       totalConversations = Object.values(volumeData.conversation_counts)
         .reduce((sum, count) => sum + count, 0);
     }
     
     // Calculate AI-handled conversations based on tags
+    // These will only count conversations that are actually tagged
     Object.entries(tagsData.tags).forEach(([tag, count]) => {
       const tagLower = tag.toLowerCase();
       if (tagLower.includes('silly ai') || tagLower.includes('ai resolved')) {
@@ -309,19 +311,22 @@ const Dashboard = ({ onLogout, token }) => {
     });
     
     // If AI conversations are not tagged, estimate from staff data (fallback)
+    // But be careful not to overestimate
     if (aiHandledConversations === 0 && staffData.report["Silly AI"]) {
       // Use a better estimation than just response count
-      // Adjust this multiplier based on your domain knowledge of the average responses per conversation
-      const estimatedResponsesPerConversation = 2.5;
+      // Higher value = more conservative estimate
+      const estimatedResponsesPerConversation = 3.5; // Increased from 2.5 to be more conservative
+      
+      // Calculate a more conservative estimate
       aiHandledConversations = Math.round((staffData.report["Silly AI"].response_count || 0) / estimatedResponsesPerConversation);
       
       // Make sure we don't exceed total conversations
       aiHandledConversations = Math.min(aiHandledConversations, totalConversations);
     }
     
-    // Calculate AI resolution rate
-    const aiResolutionRate = totalConversations > 0 
-      ? Math.round((aiHandledConversations / totalConversations) * 100) 
+    // Calculate AI resolution rate with a sanity check to ensure it doesn't exceed 100%
+    const aiResolutionRate = totalConversations > 0
+      ? Math.min(Math.round((aiHandledConversations / totalConversations) * 100), 100)
       : 0;
     
     setAiMetrics(prevMetrics => ({
@@ -362,11 +367,11 @@ const Dashboard = ({ onLogout, token }) => {
       previousYearResolutionRate: prevYearChatbotResolutionRate
     }));
     
-    // Process previous year AI metrics - based on conversations
+    // Process previous year AI metrics - based on conversations only
     let prevYearTotalConversations = 0;
     let prevYearAiHandledConversations = 0;
     
-    // Get previous year total conversation volume
+    // Get previous year total conversation volume from volume data only
     if (prevYearVolumeData && prevYearVolumeData.conversation_counts) {
       prevYearTotalConversations = Object.values(prevYearVolumeData.conversation_counts)
         .reduce((sum, count) => sum + count, 0);
@@ -382,16 +387,17 @@ const Dashboard = ({ onLogout, token }) => {
     
     // If AI conversations are not tagged, estimate from staff data (fallback)
     if (prevYearAiHandledConversations === 0 && prevYearStaffData.report["Silly AI"]) {
-      // Use a better estimation than just response count
-      const estimatedResponsesPerConversation = 2.5;
+      // Use a higher estimate for responses per conversation to be conservative
+      const estimatedResponsesPerConversation = 3.5;
       prevYearAiHandledConversations = Math.round((prevYearStaffData.report["Silly AI"].response_count || 0) / estimatedResponsesPerConversation);
       
       // Make sure we don't exceed total conversations
       prevYearAiHandledConversations = Math.min(prevYearAiHandledConversations, prevYearTotalConversations);
     }
     
+    // Calculate with a sanity check to ensure rate doesn't exceed 100%
     const prevYearAiResolutionRate = prevYearTotalConversations > 0 
-      ? Math.round((prevYearAiHandledConversations / prevYearTotalConversations) * 100) 
+      ? Math.min(Math.round((prevYearAiHandledConversations / prevYearTotalConversations) * 100), 100)
       : 0;
     
     setAiMetrics(prevMetrics => ({
@@ -761,26 +767,28 @@ const Dashboard = ({ onLogout, token }) => {
     };
   };
 
-  const getTotalConversations = () => {
-    if (!dashboardData.volume || !dashboardData.volume.conversation_counts) {
-      return { current: 'N/A', change: null };
-    }
-    
-    const currentTotal = Object.values(dashboardData.volume.conversation_counts)
-      .reduce((sum, count) => sum + count, 0);
-    
-    if (!comparisonMode || !prevYearData.volume || !prevYearData.volume.conversation_counts) {
-      return { current: currentTotal, change: null };
-    }
-    
-    const prevTotal = Object.values(prevYearData.volume.conversation_counts)
-      .reduce((sum, count) => sum + count, 0);
-    
-    return { 
-      current: currentTotal, 
-      change: calculatePercentChange(currentTotal, prevTotal)
-    };
+const getTotalConversations = () => {
+  if (!dashboardData.volume || !dashboardData.volume.conversation_counts) {
+    return { current: 'N/A', change: null };
+  }
+  
+  // Sum up the conversation counts from the volume endpoint
+  // This directly reports the number of new conversations created per day
+  const currentTotal = Object.values(dashboardData.volume.conversation_counts)
+    .reduce((sum, count) => sum + count, 0);
+  
+  if (!comparisonMode || !prevYearData.volume || !prevYearData.volume.conversation_counts) {
+    return { current: currentTotal, change: null };
+  }
+  
+  const prevTotal = Object.values(prevYearData.volume.conversation_counts)
+    .reduce((sum, count) => sum + count, 0);
+  
+  return { 
+    current: currentTotal, 
+    change: calculatePercentChange(currentTotal, prevTotal)
   };
+};
 
   const getAverageSatisfaction = () => {
     if (!dashboardData.channelSummary || 
@@ -815,6 +823,7 @@ const Dashboard = ({ onLogout, token }) => {
       return { current: 'N/A', change: null };
     }
     
+    // Get only active conversations, explicitly NOT including archived
     const currentActive = dashboardData.channelSummary.aggregated.active_conversations;
     
     if (!comparisonMode || 
