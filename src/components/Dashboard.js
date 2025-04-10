@@ -1,8 +1,4 @@
-{aiMetrics.aiResolutionRate > 0 && (
-          <>
-            {' '}<span className="font-bold text-yellow-300">Silly AI</span> has handled <span className="font-bold text-yellow-300">{aiMetrics.aiResolutionRate}%</span> of all conversations.
-          </>
-        )}import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Sector } from 'recharts';
 import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap, Plus, X, Bot, Award, Calendar } from 'lucide-react';
 import BrandForm from './BrandForm';
@@ -171,16 +167,18 @@ const Dashboard = ({ onLogout, token }) => {
           const responseTimeData = await responseTimeRes.json();
           const volumeData = await volumeRes.json();
   
-          setDashboardData({
+          const dashboardDataObj = {
             channelSummary: channelData,
             tags: tagsData,
             staff: staffData,
             responseTime: responseTimeData,
             volume: volumeData
-          });
+          };
+          
+          setDashboardData(dashboardDataObj);
           
           // Process chatbot and AI metrics from current data
-          processChatbotAndAiMetrics(tagsData, staffData);
+          processChatbotAndAiMetrics(tagsData, staffData, volumeData);
           
           // If comparison mode is enabled, fetch year-over-year data
           if (comparisonMode) {
@@ -217,16 +215,18 @@ const Dashboard = ({ onLogout, token }) => {
               const prevYearResponseTimeData = await prevYearResponseTimeRes.json();
               const prevYearVolumeData = await prevYearVolumeRes.json();
               
-              setPrevYearData({
+              const prevYearDataObj = {
                 channelSummary: prevYearChannelData,
                 tags: prevYearTagsData,
                 staff: prevYearStaffData,
                 responseTime: prevYearResponseTimeData,
                 volume: prevYearVolumeData
-              });
+              };
+              
+              setPrevYearData(prevYearDataObj);
               
               // Process previous year chatbot and AI metrics
-              processPreviousYearChatbotAndAiMetrics(prevYearTagsData, prevYearStaffData);
+              processPreviousYearChatbotAndAiMetrics(prevYearTagsData, prevYearStaffData, prevYearVolumeData);
             } catch (compError) {
               console.error('Error fetching comparison data:', compError);
               // We don't show error for comparison data, just reset it
@@ -256,7 +256,7 @@ const Dashboard = ({ onLogout, token }) => {
   }, [dateRange, token, comparisonMode]);
 
   // New function to process chatbot and AI metrics from the current data
-  const processChatbotAndAiMetrics = (tagsData, staffData) => {
+  const processChatbotAndAiMetrics = (tagsData, staffData, volumeData) => {
     if (!tagsData || !tagsData.tags || !staffData || !staffData.report) {
       return;
     }
@@ -295,8 +295,8 @@ const Dashboard = ({ onLogout, token }) => {
     let aiHandledConversations = 0;
     
     // Get total conversation volume
-    if (dashboardData.volume && dashboardData.volume.conversation_counts) {
-      totalConversations = Object.values(dashboardData.volume.conversation_counts)
+    if (volumeData && volumeData.conversation_counts) {
+      totalConversations = Object.values(volumeData.conversation_counts)
         .reduce((sum, count) => sum + count, 0);
     }
     
@@ -333,7 +333,7 @@ const Dashboard = ({ onLogout, token }) => {
   };
   
   // Process previous year's chatbot and AI metrics
-  const processPreviousYearChatbotAndAiMetrics = (prevYearTagsData, prevYearStaffData) => {
+  const processPreviousYearChatbotAndAiMetrics = (prevYearTagsData, prevYearStaffData, prevYearVolumeData) => {
     if (!prevYearTagsData || !prevYearTagsData.tags || !prevYearStaffData || !prevYearStaffData.report) {
       return;
     }
@@ -367,8 +367,8 @@ const Dashboard = ({ onLogout, token }) => {
     let prevYearAiHandledConversations = 0;
     
     // Get previous year total conversation volume
-    if (prevYearData.volume && prevYearData.volume.conversation_counts) {
-      prevYearTotalConversations = Object.values(prevYearData.volume.conversation_counts)
+    if (prevYearVolumeData && prevYearVolumeData.conversation_counts) {
+      prevYearTotalConversations = Object.values(prevYearVolumeData.conversation_counts)
         .reduce((sum, count) => sum + count, 0);
     }
     
@@ -761,7 +761,7 @@ const Dashboard = ({ onLogout, token }) => {
     };
   };
 
-  const getTotalTickets = () => {
+  const getTotalConversations = () => {
     if (!dashboardData.volume || !dashboardData.volume.conversation_counts) {
       return { current: 'N/A', change: null };
     }
@@ -808,7 +808,7 @@ const Dashboard = ({ onLogout, token }) => {
     };
   };
 
-  const getActiveTickets = () => {
+  const getActiveConversations = () => {
     if (!dashboardData.channelSummary || 
         !dashboardData.channelSummary.aggregated || 
         dashboardData.channelSummary.aggregated.active_conversations === undefined) {
@@ -828,7 +828,7 @@ const Dashboard = ({ onLogout, token }) => {
     
     return {
       current: currentActive,
-      change: calculatePercentChange(currentActive, prevActive, false) // Active tickets lower is better
+      change: calculatePercentChange(currentActive, prevActive, false) // Active conversations lower is better
     };
   };
 
@@ -881,9 +881,9 @@ const Dashboard = ({ onLogout, token }) => {
           </>
         )}
         
-        {getActiveTickets().current !== 'N/A' && (
+        {getActiveConversations().current !== 'N/A' && (
           <>
-            Currently <span className="font-bold text-yellow-300">{getActiveTickets().current}</span> active tickets 
+            Currently <span className="font-bold text-yellow-300">{getActiveConversations().current}</span> active conversations 
             require attention.
           </>
         )}
@@ -894,9 +894,15 @@ const Dashboard = ({ onLogout, token }) => {
           </>
         )}
         
+        {aiMetrics.aiResolutionRate > 0 && (
+          <>
+            {' '}<span className="font-bold text-yellow-300">Silly AI</span> has handled <span className="font-bold text-yellow-300">{aiMetrics.aiResolutionRate}%</span> of all conversations.
+          </>
+        )}
+        
         {comparisonMode && aiMetrics.previousYearAiResolutionRate > 0 && (
           <>
-            {' '}Last year, <span className="font-bold text-yellow-300">Silly AI</span> handled <span className="font-bold text-yellow-300">{aiMetrics.previousYearAiResolutionRate}%</span> of all tickets.
+            {' '}Last year, <span className="font-bold text-yellow-300">Silly AI</span> handled <span className="font-bold text-yellow-300">{aiMetrics.previousYearAiResolutionRate}%</span> of all conversations.
           </>
         )}
       </span>
@@ -1086,17 +1092,17 @@ const Dashboard = ({ onLogout, token }) => {
           )}
         </div>
         
-        {/* Total Tickets KPI */}
+        {/* Total Conversations KPI */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <Inbox className="text-purple-500 mr-2" size={20} />
-            <h3 className="font-semibold">Total Tickets</h3>
+            <h3 className="font-semibold">Total Conversations</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">{getTotalTickets().current}</p>
-          {comparisonMode && getTotalTickets().change && (
-            <p className={`text-sm ${getTotalTickets().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
-              {getTotalTickets().change.isPositive ? '↑' : '↓'} 
-              {getTotalTickets().change.value}% {getComparisonLabel()}
+          <p className="text-3xl font-bold mt-2">{getTotalConversations().current}</p>
+          {comparisonMode && getTotalConversations().change && (
+            <p className={`text-sm ${getTotalConversations().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getTotalConversations().change.isPositive ? '↑' : '↓'} 
+              {getTotalConversations().change.value}% {getComparisonLabel()}
             </p>
           )}
         </div>
@@ -1120,17 +1126,17 @@ const Dashboard = ({ onLogout, token }) => {
           )}
         </div>
         
-        {/* Open Tickets KPI */}
+        {/* Open Conversations KPI */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <AlertTriangle className="text-yellow-500 mr-2" size={20} />
-            <h3 className="font-semibold">Open Tickets</h3>
+            <h3 className="font-semibold">Open Conversations</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">{getActiveTickets().current}</p>
-          {comparisonMode && getActiveTickets().change && (
-            <p className={`text-sm ${getActiveTickets().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
-              {getActiveTickets().change.isPositive ? '↑' : '↓'} 
-              {getActiveTickets().change.value}% {getComparisonLabel()}
+          <p className="text-3xl font-bold mt-2">{getActiveConversations().current}</p>
+          {comparisonMode && getActiveConversations().change && (
+            <p className={`text-sm ${getActiveConversations().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getActiveConversations().change.isPositive ? '↑' : '↓'} 
+              {getActiveConversations().change.value}% {getComparisonLabel()}
             </p>
           )}
         </div>
@@ -1186,12 +1192,12 @@ const Dashboard = ({ onLogout, token }) => {
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-500">Total Resolved</p>
-              <p className="text-xl font-bold">{aiMetrics.totalResolved}</p>
+              <p className="text-sm text-gray-500">AI-Handled</p>
+              <p className="text-xl font-bold">{aiMetrics.aiHandledConversations}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">AI Resolved</p>
-              <p className="text-xl font-bold">{aiMetrics.aiResolved}</p>
+              <p className="text-sm text-gray-500">Total Conversations</p>
+              <p className="text-xl font-bold">{aiMetrics.totalConversations}</p>
             </div>
           </div>
           
@@ -1304,11 +1310,11 @@ const Dashboard = ({ onLogout, token }) => {
           </ResponsiveContainer>
         </div>
         
-        {/* Number of Tickets Section */}
+        {/* Number of Conversations Section */}
         <div className="bg-white p-6 rounded shadow">
           <div className="flex items-center mb-4">
             <Inbox className="text-purple-500 mr-2" size={20} />
-            <h2 className="text-xl font-bold">Number of Tickets</h2>
+            <h2 className="text-xl font-bold">Number of Conversations</h2>
             {comparisonMode && (
               <div className="ml-auto flex items-center text-sm">
                 <div className="flex items-center mr-4">
@@ -1325,13 +1331,13 @@ const Dashboard = ({ onLogout, token }) => {
           <div className="mb-4">
             <div className="flex justify-between items-center">
               <div>
-                <p className="text-2xl font-bold">{getTotalTickets().current}</p>
+                <p className="text-2xl font-bold">{getTotalConversations().current}</p>
                 <p className="text-sm text-gray-500">Total ({getDateRangeLabel()})</p>
               </div>
-              {comparisonMode && getTotalTickets().change && (
+              {comparisonMode && getTotalConversations().change && (
                 <div className="text-right">
-                  <p className={getTotalTickets().change.isImprovement ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
-                    {getTotalTickets().change.isPositive ? '↑' : '↓'} {getTotalTickets().change.value}%
+                  <p className={getTotalConversations().change.isImprovement ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
+                    {getTotalConversations().change.isPositive ? '↑' : '↓'} {getTotalConversations().change.value}%
                   </p>
                   <p className="text-sm text-gray-500">{getComparisonLabel()}</p>
                 </div>
@@ -1453,7 +1459,7 @@ const Dashboard = ({ onLogout, token }) => {
                       <Tooltip 
                         formatter={(value, name) => {
                           // Format the tooltip better
-                          return [`${value} tickets`, name];
+                          return [`${value} conversations`, name];
                         }}
                         contentStyle={{ fontSize: '12px' }}
                       />
