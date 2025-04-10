@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Sector } from 'recharts';
-import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap, Plus, X } from 'lucide-react';
+import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap, Plus, X, Bot, Award, Calendar } from 'lucide-react';
 import BrandForm from './BrandForm';
 
 const Dashboard = ({ onLogout, token }) => {
@@ -29,12 +29,25 @@ const Dashboard = ({ onLogout, token }) => {
   const [fetchTimeout, setFetchTimeout] = useState(null);
   const [activeTagIndex, setActiveTagIndex] = useState(null);
   const [comparisonMode, setComparisonMode] = useState(true); // Set to true by default
-  const [prevPeriodData, setPrevPeriodData] = useState({
+  const [prevYearData, setPrevYearData] = useState({
     channelSummary: null,
     tags: null,
     staff: null,
     responseTime: null,
     volume: null
+  });
+  // New state for tracking chatbot and AI metrics
+  const [chatbotMetrics, setChatbotMetrics] = useState({
+    totalChatbotInteractions: 0,
+    chatbotResolved: 0,
+    chatbotResolutionRate: 0,
+    previousYearResolutionRate: 0
+  });
+  const [aiMetrics, setAiMetrics] = useState({
+    totalResolved: 0,
+    aiResolved: 0, 
+    aiResolutionRate: 0,
+    previousYearAiResolutionRate: 0
   });
 
   // Fetch brands on component mount
@@ -63,38 +76,21 @@ const Dashboard = ({ onLogout, token }) => {
     fetchBrands();
   }, [token]);
 
-  // Function that automatically calculates the previous period dates based on the selected date range
-  const getAutoPreviousPeriodDates = (currentStart, currentEnd) => {
+  // Replaced the previous period calculation with year-over-year
+  const getYearOverYearDates = (currentStart, currentEnd) => {
     const startDate = new Date(currentStart);
     const endDate = new Date(currentEnd);
-    const daysDiff = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
     
-    // Create a previous period that matches the current period pattern
-    let prevStartDate = new Date(startDate);
-    let prevEndDate = new Date(endDate);
+    // Go back exactly one year for both dates
+    let prevYearStartDate = new Date(startDate);
+    prevYearStartDate.setFullYear(prevYearStartDate.getFullYear() - 1);
     
-    // For month, quarter, or ytd we need to go back by periods, not just days
-    if (dateRange === 'month') {
-      // Previous month
-      prevStartDate.setMonth(prevStartDate.getMonth() - 1);
-      prevEndDate.setMonth(prevEndDate.getMonth() - 1);
-    } else if (dateRange === 'quarter') {
-      // Previous quarter (go back 3 months)
-      prevStartDate.setMonth(prevStartDate.getMonth() - 3);
-      prevEndDate.setMonth(prevEndDate.getMonth() - 3);
-    } else if (dateRange === 'ytd') {
-      // Previous year's same period
-      prevStartDate.setFullYear(prevStartDate.getFullYear() - 1);
-      prevEndDate.setFullYear(prevEndDate.getFullYear() - 1);
-    } else {
-      // For 7d and 30d, simply go back by the number of days
-      prevStartDate.setDate(prevStartDate.getDate() - daysDiff);
-      prevEndDate.setDate(prevEndDate.getDate() - daysDiff);
-    }
+    let prevYearEndDate = new Date(endDate);
+    prevYearEndDate.setFullYear(prevYearEndDate.getFullYear() - 1);
     
     return {
-      startDate: prevStartDate.toISOString().split('T')[0],
-      endDate: prevEndDate.toISOString().split('T')[0]
+      startDate: prevYearStartDate.toISOString().split('T')[0],
+      endDate: prevYearEndDate.toISOString().split('T')[0]
     };
   };
 
@@ -179,52 +175,58 @@ const Dashboard = ({ onLogout, token }) => {
             volume: volumeData
           });
           
-          // If comparison mode is enabled, fetch previous period data automatically
+          // Process chatbot and AI metrics from current data
+          processChatbotAndAiMetrics(tagsData, staffData);
+          
+          // If comparison mode is enabled, fetch year-over-year data
           if (comparisonMode) {
-            const prevPeriod = getAutoPreviousPeriodDates(startDate, endDate);
+            const prevYear = getYearOverYearDates(startDate, endDate);
             
             try {
-              const [prevChannelRes, prevTagsRes, prevStaffRes, prevResponseTimeRes, prevVolumeRes] = await Promise.all([
-                fetch(`/api/channel-summary?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+              const [prevYearChannelRes, prevYearTagsRes, prevYearStaffRes, prevYearResponseTimeRes, prevYearVolumeRes] = await Promise.all([
+                fetch(`/api/channel-summary?start_date=${prevYear.startDate}&end_date=${prevYear.endDate}`, {
                   headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch(`/api/tags?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                fetch(`/api/tags?start_date=${prevYear.startDate}&end_date=${prevYear.endDate}`, {
                   headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch(`/api/staff?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                fetch(`/api/staff?start_date=${prevYear.startDate}&end_date=${prevYear.endDate}`, {
                   headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch(`/api/response-time?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                fetch(`/api/response-time?start_date=${prevYear.startDate}&end_date=${prevYear.endDate}`, {
                   headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch(`/api/volume?start_date=${prevPeriod.startDate}&end_date=${prevPeriod.endDate}`, {
+                fetch(`/api/volume?start_date=${prevYear.startDate}&end_date=${prevYear.endDate}`, {
                   headers: { 'Authorization': `Bearer ${token}` }
                 })
               ]);
               
-              if (!prevChannelRes.ok || !prevTagsRes.ok || !prevStaffRes.ok || 
-                  !prevResponseTimeRes.ok || !prevVolumeRes.ok) {
+              if (!prevYearChannelRes.ok || !prevYearTagsRes.ok || !prevYearStaffRes.ok || 
+                  !prevYearResponseTimeRes.ok || !prevYearVolumeRes.ok) {
                 throw new Error('Failed to fetch comparison data');
               }
               
-              // Process previous period data
-              const prevChannelData = await prevChannelRes.json();
-              const prevTagsData = await prevTagsRes.json();
-              const prevStaffData = await prevStaffRes.json();
-              const prevResponseTimeData = await prevResponseTimeRes.json();
-              const prevVolumeData = await prevVolumeRes.json();
+              // Process previous year data
+              const prevYearChannelData = await prevYearChannelRes.json();
+              const prevYearTagsData = await prevYearTagsRes.json();
+              const prevYearStaffData = await prevYearStaffRes.json();
+              const prevYearResponseTimeData = await prevYearResponseTimeRes.json();
+              const prevYearVolumeData = await prevYearVolumeRes.json();
               
-              setPrevPeriodData({
-                channelSummary: prevChannelData,
-                tags: prevTagsData,
-                staff: prevStaffData,
-                responseTime: prevResponseTimeData,
-                volume: prevVolumeData
+              setPrevYearData({
+                channelSummary: prevYearChannelData,
+                tags: prevYearTagsData,
+                staff: prevYearStaffData,
+                responseTime: prevYearResponseTimeData,
+                volume: prevYearVolumeData
               });
+              
+              // Process previous year chatbot and AI metrics
+              processPreviousYearChatbotAndAiMetrics(prevYearTagsData, prevYearStaffData);
             } catch (compError) {
               console.error('Error fetching comparison data:', compError);
               // We don't show error for comparison data, just reset it
-              setPrevPeriodData({
+              setPrevYearData({
                 channelSummary: null,
                 tags: null,
                 staff: null,
@@ -248,6 +250,111 @@ const Dashboard = ({ onLogout, token }) => {
   
     fetchDashboardData();
   }, [dateRange, token, comparisonMode]);
+
+  // New function to process chatbot and AI metrics from the current data
+  const processChatbotAndAiMetrics = (tagsData, staffData) => {
+    if (!tagsData || !tagsData.tags || !staffData || !staffData.report) {
+      return;
+    }
+    
+    // Process chatbot metrics
+    let totalChatbotInteractions = 0;
+    let chatbotResolved = 0;
+    
+    // Count tags with 'chatbot' (case insensitive)
+    Object.entries(tagsData.tags).forEach(([tag, count]) => {
+      const tagLower = tag.toLowerCase();
+      if (tagLower.includes('chatbot')) {
+        totalChatbotInteractions += count;
+        
+        // If tag also contains 'resolved' or 'solved', count as resolved
+        if (tagLower.includes('resolved') || tagLower.includes('solved')) {
+          chatbotResolved += count;
+        }
+      }
+    });
+    
+    // Calculate chatbot resolution rate
+    const chatbotResolutionRate = totalChatbotInteractions > 0 
+      ? Math.round((chatbotResolved / totalChatbotInteractions) * 100) 
+      : 0;
+    
+    setChatbotMetrics(prevMetrics => ({
+      ...prevMetrics,
+      totalChatbotInteractions,
+      chatbotResolved,
+      chatbotResolutionRate
+    }));
+    
+    // Process AI metrics
+    const totalResolved = Object.values(staffData.report)
+      .reduce((sum, staff) => sum + (staff.response_count || 0), 0);
+    
+    // Count responses by "Silly AI"
+    const aiResolved = staffData.report["Silly AI"] 
+      ? (staffData.report["Silly AI"].response_count || 0) 
+      : 0;
+    
+    // Calculate AI resolution rate
+    const aiResolutionRate = totalResolved > 0 
+      ? Math.round((aiResolved / totalResolved) * 100) 
+      : 0;
+    
+    setAiMetrics(prevMetrics => ({
+      ...prevMetrics,
+      totalResolved,
+      aiResolved,
+      aiResolutionRate
+    }));
+  };
+  
+  // Process previous year's chatbot and AI metrics
+  const processPreviousYearChatbotAndAiMetrics = (prevYearTagsData, prevYearStaffData) => {
+    if (!prevYearTagsData || !prevYearTagsData.tags || !prevYearStaffData || !prevYearStaffData.report) {
+      return;
+    }
+    
+    // Process previous year chatbot metrics
+    let prevYearTotalChatbotInteractions = 0;
+    let prevYearChatbotResolved = 0;
+    
+    Object.entries(prevYearTagsData.tags).forEach(([tag, count]) => {
+      const tagLower = tag.toLowerCase();
+      if (tagLower.includes('chatbot')) {
+        prevYearTotalChatbotInteractions += count;
+        
+        if (tagLower.includes('resolved') || tagLower.includes('solved')) {
+          prevYearChatbotResolved += count;
+        }
+      }
+    });
+    
+    const prevYearChatbotResolutionRate = prevYearTotalChatbotInteractions > 0 
+      ? Math.round((prevYearChatbotResolved / prevYearTotalChatbotInteractions) * 100) 
+      : 0;
+    
+    setChatbotMetrics(prevMetrics => ({
+      ...prevMetrics,
+      previousYearResolutionRate: prevYearChatbotResolutionRate
+    }));
+    
+    // Process previous year AI metrics
+    const prevYearTotalResolved = Object.values(prevYearStaffData.report)
+      .reduce((sum, staff) => sum + (staff.response_count || 0), 0);
+    
+    const prevYearAiResolved = prevYearStaffData.report["Silly AI"] 
+      ? (prevYearStaffData.report["Silly AI"].response_count || 0) 
+      : 0;
+    
+    const prevYearAiResolutionRate = prevYearTotalResolved > 0 
+      ? Math.round((prevYearAiResolved / prevYearTotalResolved) * 100) 
+      : 0;
+    
+    setAiMetrics(prevMetrics => ({
+      ...prevMetrics,
+      previousYearAiResolutionRate: prevYearAiResolutionRate
+    }));
+  };
 
   const handleAddBrand = (newBrand) => {
     setBrands([...brands, newBrand]);
@@ -289,17 +396,17 @@ const Dashboard = ({ onLogout, token }) => {
       .sort((a, b) => a.date.localeCompare(b.date));
   };
 
-  // Enhanced volume data processing to include previous period data
+  // Enhanced volume data processing to include year-over-year data
   const processVolumeDataWithComparison = () => {
     const currentData = processVolumeData();
     
-    if (!comparisonMode || !prevPeriodData.volume || !prevPeriodData.volume.conversation_counts) {
+    if (!comparisonMode || !prevYearData.volume || !prevYearData.volume.conversation_counts) {
       return currentData;
     }
     
-    // Process previous period data
+    // Process previous year data
     const prevDataMap = new Map();
-    Object.entries(prevPeriodData.volume.conversation_counts)
+    Object.entries(prevYearData.volume.conversation_counts)
       .forEach(([date, count]) => {
         prevDataMap.set(date, count);
       });
@@ -321,14 +428,14 @@ const Dashboard = ({ onLogout, token }) => {
     return result;
   };
 
-  // Helper to generate a sequence of dates for the previous period that aligns with current period
+  // Helper to generate a sequence of dates for the previous year that aligns with current period
   const generateDateSequence = (currentData) => {
-    if (!prevPeriodData.volume || !prevPeriodData.volume.conversation_counts) {
+    if (!prevYearData.volume || !prevYearData.volume.conversation_counts) {
       return [];
     }
     
-    // Get all dates from previous period, sorted
-    const prevDates = Object.keys(prevPeriodData.volume.conversation_counts).sort();
+    // Get all dates from previous year, sorted
+    const prevDates = Object.keys(prevYearData.volume.conversation_counts).sort();
     
     // If we have equal number of dates, just return the sorted previous dates
     if (prevDates.length === currentData.length) {
@@ -351,17 +458,17 @@ const Dashboard = ({ onLogout, token }) => {
       .sort((a, b) => a.date.localeCompare(b.date));
   };
 
-  // Enhanced response time data processing to include previous period data
+  // Enhanced response time data processing to include year-over-year data
   const processResponseTimeDataWithComparison = () => {
     const currentData = processResponseTimeData();
     
-    if (!comparisonMode || !prevPeriodData.responseTime || !prevPeriodData.responseTime.response_times) {
+    if (!comparisonMode || !prevYearData.responseTime || !prevYearData.responseTime.response_times) {
       return currentData;
     }
     
-    // Process previous period data
+    // Process previous year data
     const prevDataMap = new Map();
-    Object.entries(prevPeriodData.responseTime.response_times)
+    Object.entries(prevYearData.responseTime.response_times)
       .forEach(([date, seconds]) => {
         prevDataMap.set(date, (seconds / 3600).toFixed(2)); // Convert to hours
       });
@@ -385,12 +492,12 @@ const Dashboard = ({ onLogout, token }) => {
 
   // Helper to generate a sequence of dates for response time data
   const generateResponseTimeDateSequence = (currentData) => {
-    if (!prevPeriodData.responseTime || !prevPeriodData.responseTime.response_times) {
+    if (!prevYearData.responseTime || !prevYearData.responseTime.response_times) {
       return [];
     }
     
-    // Get all dates from previous period, sorted
-    const prevDates = Object.keys(prevPeriodData.responseTime.response_times).sort();
+    // Get all dates from previous year, sorted
+    const prevDates = Object.keys(prevYearData.responseTime.response_times).sort();
     
     // If we have equal number of dates, just return the sorted previous dates
     if (prevDates.length === currentData.length) {
@@ -415,12 +522,15 @@ const Dashboard = ({ onLogout, token }) => {
     
     const excludedTags = [
       'Auto Reply', '💎 VIP', 'Pre-order', 'Order Edited', 'No AI', 
-      'AI Error', 'Other', 'Chatbot', 'Auto Resolved', 'Chatbot solved', 'Out of Office', 'Spam',
-      'Returns - ParcelFeeder', 'Returns - ColliFlow', '✨ Auto Reply', 'Out Of Office', 'chatbot'
+      'AI Error', 'Other', 'Auto Resolved', 'Out of Office', 'Spam',
+      'Returns - ParcelFeeder', 'Returns - ColliFlow', '✨ Auto Reply', 'Out Of Office'
     ];
     
-    // Create a case-insensitive exclusion check
+    // Create a case-insensitive exclusion check but keep Chatbot and Chatbot Resolved
     const isExcluded = (tagName) => {
+      // Keep chatbot tags for analysis
+      if (tagName.toLowerCase().includes('chatbot')) return false;
+      
       // Check exact match first
       if (excludedTags.includes(tagName)) return true;
       
@@ -428,7 +538,6 @@ const Dashboard = ({ onLogout, token }) => {
       return excludedTags.some(excluded => 
         tagName.toLowerCase() === excluded.toLowerCase() ||
         tagName.toLowerCase().includes('auto') ||
-        tagName.toLowerCase().includes('chatbot') ||
         tagName.toLowerCase().includes('office')
       );
     };
@@ -448,17 +557,17 @@ const Dashboard = ({ onLogout, token }) => {
     return processed;
   };
 
-  // Process tags data with comparison to the previous period
+  // Process tags data with comparison to the previous year
   const processTagsDataWithComparison = () => {
     const currentTags = processTagsData();
     
-    if (!comparisonMode || !prevPeriodData.tags || !prevPeriodData.tags.tags) {
+    if (!comparisonMode || !prevYearData.tags || !prevYearData.tags.tags) {
       return currentTags;
     }
     
-    // Create a map of previous period tags for easy lookup
+    // Create a map of previous year tags for easy lookup
     const prevTagsMap = new Map();
-    Object.entries(prevPeriodData.tags.tags)
+    Object.entries(prevYearData.tags.tags)
       .forEach(([name, count]) => {
         prevTagsMap.set(name, count);
       });
@@ -485,23 +594,24 @@ const Dashboard = ({ onLogout, token }) => {
         name,
         responseCount: data.response_count || 0,
         appreciations: data.appreciations_count || 0,
-        responseTime: data.response_time_seconds ? Math.round(data.response_time_seconds / 60) : 0
+        responseTime: data.response_time_seconds ? Math.round(data.response_time_seconds / 60) : 0,
+        isAi: name === "Silly AI" // Flag for AI staff
       }))
       .sort((a, b) => b.responseCount - a.responseCount)
       .slice(0, 5);
   };
 
-  // Process staff data with comparison to previous period
+  // Process staff data with comparison to previous year
   const processStaffDataWithComparison = () => {
     const currentStaff = processStaffData();
     
-    if (!comparisonMode || !prevPeriodData.staff || !prevPeriodData.staff.report) {
+    if (!comparisonMode || !prevYearData.staff || !prevYearData.staff.report) {
       return currentStaff;
     }
     
-    // Create a map of previous period staff data for easy lookup
+    // Create a map of previous year staff data for easy lookup
     const prevStaffMap = new Map();
-    Object.entries(prevPeriodData.staff.report)
+    Object.entries(prevYearData.staff.report)
       .forEach(([name, data]) => {
         prevStaffMap.set(name, {
           responseCount: data.response_count || 0,
@@ -576,13 +686,13 @@ const Dashboard = ({ onLogout, token }) => {
     else formattedTime = `${(avgSeconds / 3600).toFixed(2)} hr`;
     
     if (!comparisonMode || 
-        !prevPeriodData.responseTime || 
-        !prevPeriodData.responseTime.summary || 
-        !prevPeriodData.responseTime.summary.averages) {
+        !prevYearData.responseTime || 
+        !prevYearData.responseTime.summary || 
+        !prevYearData.responseTime.summary.averages) {
       return { current: formattedTime, change: null };
     }
     
-    const prevAvgSeconds = prevPeriodData.responseTime.summary.averages.in_range;
+    const prevAvgSeconds = prevYearData.responseTime.summary.averages.in_range;
     
     return {
       current: formattedTime,
@@ -615,11 +725,11 @@ const Dashboard = ({ onLogout, token }) => {
     const currentTotal = Object.values(dashboardData.volume.conversation_counts)
       .reduce((sum, count) => sum + count, 0);
     
-    if (!comparisonMode || !prevPeriodData.volume || !prevPeriodData.volume.conversation_counts) {
+    if (!comparisonMode || !prevYearData.volume || !prevYearData.volume.conversation_counts) {
       return { current: currentTotal, change: null };
     }
     
-    const prevTotal = Object.values(prevPeriodData.volume.conversation_counts)
+    const prevTotal = Object.values(prevYearData.volume.conversation_counts)
       .reduce((sum, count) => sum + count, 0);
     
     return { 
@@ -629,34 +739,24 @@ const Dashboard = ({ onLogout, token }) => {
   };
 
   const getAverageSatisfaction = () => {
-    // First check if we have dashboard data
     if (!dashboardData.channelSummary || 
-        !dashboardData.channelSummary.aggregated) {
-      return { current: 'No Data', change: null };
+        !dashboardData.channelSummary.aggregated || 
+        dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
+        dashboardData.channelSummary.aggregated.average_satisfaction_rating === null) {
+      return { current: null, change: null };
     }
     
-    const aggregated = dashboardData.channelSummary.aggregated;
+    const currentSatisfaction = dashboardData.channelSummary.aggregated.average_satisfaction_rating;
     
-    // Check if we have satisfaction rating data
-    if (aggregated.average_satisfaction_rating === null || 
-        aggregated.average_satisfaction_rating === undefined) {
-      return { current: 'No Data', change: null };
-    }
-    
-    // We have satisfaction data
-    const currentSatisfaction = aggregated.average_satisfaction_rating;
-    
-    // Only show comparison if we have previous data
     if (!comparisonMode || 
-        !prevPeriodData.channelSummary || 
-        !prevPeriodData.channelSummary.aggregated || 
-        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === null ||
-        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === undefined) {
+        !prevYearData.channelSummary || 
+        !prevYearData.channelSummary.aggregated || 
+        prevYearData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
+        prevYearData.channelSummary.aggregated.average_satisfaction_rating === null) {
       return { current: currentSatisfaction.toFixed(1), change: null };
     }
     
-    // We have both current and previous data
-    const prevSatisfaction = prevPeriodData.channelSummary.aggregated.average_satisfaction_rating;
+    const prevSatisfaction = prevYearData.channelSummary.aggregated.average_satisfaction_rating;
     
     return {
       current: currentSatisfaction.toFixed(1),
@@ -674,13 +774,13 @@ const Dashboard = ({ onLogout, token }) => {
     const currentActive = dashboardData.channelSummary.aggregated.active_conversations;
     
     if (!comparisonMode || 
-        !prevPeriodData.channelSummary || 
-        !prevPeriodData.channelSummary.aggregated || 
-        prevPeriodData.channelSummary.aggregated.active_conversations === undefined) {
+        !prevYearData.channelSummary || 
+        !prevYearData.channelSummary.aggregated || 
+        prevYearData.channelSummary.aggregated.active_conversations === undefined) {
       return { current: currentActive, change: null };
     }
     
-    const prevActive = prevPeriodData.channelSummary.aggregated.active_conversations;
+    const prevActive = prevYearData.channelSummary.aggregated.active_conversations;
     
     return {
       current: currentActive,
@@ -743,6 +843,18 @@ const Dashboard = ({ onLogout, token }) => {
             require attention.
           </>
         )}
+        
+        {chatbotMetrics.chatbotResolutionRate > 0 && (
+          <>
+            {' '}Chatbot has <span className="font-bold text-yellow-300">automatically resolved {chatbotMetrics.chatbotResolutionRate}%</span> of its interactions.
+          </>
+        )}
+        
+        {aiMetrics.aiResolutionRate > 0 && (
+          <>
+            {' '}<span className="font-bold text-yellow-300">Silly AI</span> has handled <span className="font-bold text-yellow-300">{aiMetrics.aiResolutionRate}%</span> of all tickets.
+          </>
+        )}
       </span>
     );
   };
@@ -799,6 +911,11 @@ const Dashboard = ({ onLogout, token }) => {
       default:
         return 'Selected period';
     }
+  };
+
+  // Format the comparison label for year-over-year
+  const getComparisonLabel = () => {
+    return `vs Same Period Last Year`;
   };
 
   if (loading && !brands.length) {
@@ -877,7 +994,7 @@ const Dashboard = ({ onLogout, token }) => {
                 onChange={() => setComparisonMode(!comparisonMode)}
                 className="mr-1"
               />
-              Show comparison
+              Year-over-Year
             </label>
             <button 
               onClick={() => window.location.reload()}
@@ -908,7 +1025,7 @@ const Dashboard = ({ onLogout, token }) => {
         </div>
       </div>
       
-      {/* KPI Summary */}
+      {/* KPI Summary - first row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         {/* Response Time KPI */}
         <div className="bg-white p-4 rounded shadow">
@@ -920,7 +1037,7 @@ const Dashboard = ({ onLogout, token }) => {
           {comparisonMode && getAverageResponseTime().change && (
             <p className={`text-sm ${getAverageResponseTime().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
               {getAverageResponseTime().change.isImprovement ? '↓' : '↑'} 
-              {getAverageResponseTime().change.value}% vs previous period
+              {getAverageResponseTime().change.value}% {getComparisonLabel()}
             </p>
           )}
         </div>
@@ -935,7 +1052,7 @@ const Dashboard = ({ onLogout, token }) => {
           {comparisonMode && getTotalTickets().change && (
             <p className={`text-sm ${getTotalTickets().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
               {getTotalTickets().change.isPositive ? '↑' : '↓'} 
-              {getTotalTickets().change.value}% vs previous period
+              {getTotalTickets().change.value}% {getComparisonLabel()}
             </p>
           )}
         </div>
@@ -946,19 +1063,18 @@ const Dashboard = ({ onLogout, token }) => {
             <ThumbsUp className="text-green-500 mr-2" size={20} />
             <h3 className="font-semibold">CSAT Score</h3>
           </div>
-          <p className="text-3xl font-bold mt-2">
-            {getAverageSatisfaction().current === 'No Data' 
-              ? 'No Data' 
-              : `${getAverageSatisfaction().current}/5.0`}
-          </p>
+          {getAverageSatisfaction().current !== null ? (
+            <p className="text-3xl font-bold mt-2">{getAverageSatisfaction().current}/5.0</p>
+          ) : (
+            <p className="text-3xl font-bold mt-2">No Data</p>
+          )}
           {comparisonMode && getAverageSatisfaction().change && (
             <p className={`text-sm ${getAverageSatisfaction().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
               {getAverageSatisfaction().change.isPositive ? '↑' : '↓'} 
-              {getAverageSatisfaction().change.value}% vs previous period
+              {getAverageSatisfaction().change.value}% {getComparisonLabel()}
             </p>
           )}
         </div>
-
         
         {/* Open Tickets KPI */}
         <div className="bg-white p-4 rounded shadow">
@@ -970,9 +1086,90 @@ const Dashboard = ({ onLogout, token }) => {
           {comparisonMode && getActiveTickets().change && (
             <p className={`text-sm ${getActiveTickets().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
               {getActiveTickets().change.isPositive ? '↑' : '↓'} 
-              {getActiveTickets().change.value}% vs previous period
+              {getActiveTickets().change.value}% {getComparisonLabel()}
             </p>
           )}
+        </div>
+      </div>
+      
+      {/* NEW: Chatbot & AI KPIs - second row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {/* Chatbot Resolution KPI */}
+        <div className="bg-white p-4 rounded shadow">
+          <div className="flex items-center mb-3">
+            <Bot className="text-blue-500 mr-2" size={20} />
+            <h3 className="font-semibold">Chatbot Performance</h3>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-500">Total Interactions</p>
+              <p className="text-xl font-bold">{chatbotMetrics.totalChatbotInteractions}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Auto-Resolved</p>
+              <p className="text-xl font-bold">{chatbotMetrics.chatbotResolved}</p>
+            </div>
+          </div>
+          
+          <div className="mt-3">
+            <div className="flex justify-between mb-1">
+              <p className="text-sm text-gray-500">Resolution Rate</p>
+              <p className="text-sm font-semibold">{chatbotMetrics.chatbotResolutionRate}%</p>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div 
+                className="bg-blue-500 h-2.5 rounded-full" 
+                style={{ width: `${chatbotMetrics.chatbotResolutionRate}%` }}
+              ></div>
+            </div>
+            
+            {comparisonMode && chatbotMetrics.previousYearResolutionRate > 0 && (
+              <p className={`text-xs mt-1 ${chatbotMetrics.chatbotResolutionRate > chatbotMetrics.previousYearResolutionRate ? 'text-green-500' : 'text-red-500'}`}>
+                {chatbotMetrics.chatbotResolutionRate > chatbotMetrics.previousYearResolutionRate ? '↑' : '↓'} 
+                {Math.abs(chatbotMetrics.chatbotResolutionRate - chatbotMetrics.previousYearResolutionRate)}% vs last year ({chatbotMetrics.previousYearResolutionRate}%)
+              </p>
+            )}
+          </div>
+        </div>
+        
+        {/* AI Resolution KPI */}
+        <div className="bg-white p-4 rounded shadow">
+          <div className="flex items-center mb-3">
+            <Award className="text-purple-500 mr-2" size={20} />
+            <h3 className="font-semibold">AI Resolution Rate (Silly AI)</h3>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-500">Total Resolved</p>
+              <p className="text-xl font-bold">{aiMetrics.totalResolved}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">AI Resolved</p>
+              <p className="text-xl font-bold">{aiMetrics.aiResolved}</p>
+            </div>
+          </div>
+          
+          <div className="mt-3">
+            <div className="flex justify-between mb-1">
+              <p className="text-sm text-gray-500">AI Resolution Rate</p>
+              <p className="text-sm font-semibold">{aiMetrics.aiResolutionRate}%</p>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div 
+                className="bg-purple-500 h-2.5 rounded-full" 
+                style={{ width: `${aiMetrics.aiResolutionRate}%` }}
+              ></div>
+            </div>
+            
+            {comparisonMode && aiMetrics.previousYearAiResolutionRate > 0 && (
+              <p className={`text-xs mt-1 ${aiMetrics.aiResolutionRate > aiMetrics.previousYearAiResolutionRate ? 'text-green-500' : 'text-red-500'}`}>
+                {aiMetrics.aiResolutionRate > aiMetrics.previousYearAiResolutionRate ? '↑' : '↓'} 
+                {Math.abs(aiMetrics.aiResolutionRate - aiMetrics.previousYearAiResolutionRate)}% vs last year ({aiMetrics.previousYearAiResolutionRate}%)
+              </p>
+            )}
+          </div>
         </div>
       </div>
       
@@ -993,6 +1190,18 @@ const Dashboard = ({ onLogout, token }) => {
           <div className="flex items-center mb-4">
             <Clock className="text-blue-500 mr-2" size={20} />
             <h2 className="text-xl font-bold">Response Time</h2>
+            {comparisonMode && (
+              <div className="ml-auto flex items-center text-sm">
+                <div className="flex items-center mr-4">
+                  <div className="w-3 h-3 bg-blue-500 mr-1"></div>
+                  <span>Current</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-500 mr-1"></div>
+                  <span>Last Year</span>
+                </div>
+              </div>
+            )}
           </div>
           <div className="mb-4">
             <div className="flex justify-between items-center">
@@ -1005,7 +1214,7 @@ const Dashboard = ({ onLogout, token }) => {
                   <p className={getResponseTimeChange().isImprovement ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
                     {getResponseTimeChange().isImprovement ? '↓' : '↑'} {getResponseTimeChange().value}
                   </p>
-                  <p className="text-sm text-gray-500">vs Previous period</p>
+                  <p className="text-sm text-gray-500">{getComparisonLabel()}</p>
                 </div>
               )}
             </div>
@@ -1025,7 +1234,7 @@ const Dashboard = ({ onLogout, token }) => {
                 formatter={(value, name) => {
                   return [
                     `${value} hr`, 
-                    name === "hours" ? "Current Period" : "Previous Period"
+                    name === "hours" ? "Current Period" : "Last Year"
                   ];
                 }} 
               />
@@ -1042,7 +1251,7 @@ const Dashboard = ({ onLogout, token }) => {
                   type="monotone" 
                   dataKey="prevHours" 
                   stroke="#82ca9d" 
-                  name="Previous Period" 
+                  name="Last Year" 
                   strokeWidth={2} 
                   strokeDasharray="3 3"
                 />
@@ -1056,6 +1265,18 @@ const Dashboard = ({ onLogout, token }) => {
           <div className="flex items-center mb-4">
             <Inbox className="text-purple-500 mr-2" size={20} />
             <h2 className="text-xl font-bold">Number of Tickets</h2>
+            {comparisonMode && (
+              <div className="ml-auto flex items-center text-sm">
+                <div className="flex items-center mr-4">
+                  <div className="w-3 h-3 bg-purple-500 mr-1"></div>
+                  <span>Current</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-500 mr-1"></div>
+                  <span>Last Year</span>
+                </div>
+              </div>
+            )}
           </div>
           <div className="mb-4">
             <div className="flex justify-between items-center">
@@ -1068,7 +1289,7 @@ const Dashboard = ({ onLogout, token }) => {
                   <p className={getTotalTickets().change.isImprovement ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
                     {getTotalTickets().change.isPositive ? '↑' : '↓'} {getTotalTickets().change.value}%
                   </p>
-                  <p className="text-sm text-gray-500">vs Previous period</p>
+                  <p className="text-sm text-gray-500">{getComparisonLabel()}</p>
                 </div>
               )}
             </div>
@@ -1085,7 +1306,7 @@ const Dashboard = ({ onLogout, token }) => {
               <Legend />
               <Bar dataKey="count" fill="#8884d8" name="Current Period" />
               {comparisonMode && (
-                <Bar dataKey="prevCount" fill="#82ca9d" name="Previous Period" />
+                <Bar dataKey="prevCount" fill="#82ca9d" name="Last Year" />
               )}
             </BarChart>
           </ResponsiveContainer>
@@ -1112,7 +1333,10 @@ const Dashboard = ({ onLogout, token }) => {
               {(comparisonMode ? processStaffDataWithComparison() : processStaffData()).map((staff, index) => (
                 <div key={index} className="border-b pb-2">
                   <div className="flex justify-between items-center">
-                    <span className="font-semibold">{staff.name}</span>
+                    <span className={`font-semibold ${staff.isAi ? 'text-purple-500 flex items-center' : ''}`}>
+                      {staff.isAi && <Bot size={16} className="mr-1" />}
+                      {staff.name}
+                    </span>
                     <div className="flex space-x-4">
                       <span className="w-20 text-right">
                         {staff.responseCount}
@@ -1188,17 +1412,6 @@ const Dashboard = ({ onLogout, token }) => {
                           return [`${value} tickets`, name];
                         }}
                         contentStyle={{ fontSize: '12px' }}
-                      />
-                      <Legend 
-                        layout="horizontal" 
-                        verticalAlign="bottom" 
-                        align="center"
-                        wrapperStyle={{ fontSize: '11px', paddingTop: '5px' }}
-                        formatter={(value) => {
-                          // Shorten legend labels
-                          return value.length > 15 ? `${value.substring(0, 15)}...` : value;
-                        }}
-                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1239,6 +1452,136 @@ const Dashboard = ({ onLogout, token }) => {
                   No tag data available
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* NEW: Chatbot Activity Analysis */}
+      <div className="mt-6 bg-white p-6 rounded shadow">
+        <div className="flex items-center mb-4">
+          <Bot className="text-blue-500 mr-2" size={20} />
+          <h2 className="text-xl font-bold">Chatbot & AI Performance Analysis</h2>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Chatbot resolution metrics */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center">
+              <Bot size={16} className="mr-1 text-blue-500" /> Chatbot Resolution Statistics
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-3 rounded">
+                  <p className="text-sm text-gray-500">Total Interactions</p>
+                  <p className="text-2xl font-bold">{chatbotMetrics.totalChatbotInteractions}</p>
+                  {comparisonMode && prevYearData.tags && (
+                    <p className="text-xs text-gray-500 mt-1">vs last year</p>
+                  )}
+                </div>
+                <div className="bg-green-50 p-3 rounded">
+                  <p className="text-sm text-gray-500">Successfully Resolved</p>
+                  <p className="text-2xl font-bold">{chatbotMetrics.chatbotResolved}</p>
+                  {comparisonMode && prevYearData.tags && (
+                    <p className="text-xs text-gray-500 mt-1">vs last year</p>
+                  )}
+                </div>
+              </div>
+              
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <p className="text-sm font-medium">Resolution Rate</p>
+                  <p className="text-sm font-bold">{chatbotMetrics.chatbotResolutionRate}%</p>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div 
+                    className="bg-blue-500 h-3 rounded-full" 
+                    style={{ width: `${chatbotMetrics.chatbotResolutionRate}%` }}
+                  ></div>
+                </div>
+                
+                {comparisonMode && chatbotMetrics.previousYearResolutionRate > 0 && (
+                  <div className="mt-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-sm text-gray-500">Last Year Rate</p>
+                      <p className="text-sm">{chatbotMetrics.previousYearResolutionRate}%</p>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-300 h-2 rounded-full" 
+                        style={{ width: `${chatbotMetrics.previousYearResolutionRate}%` }}
+                      ></div>
+                    </div>
+                    
+                    <p className={`text-xs mt-1 ${chatbotMetrics.chatbotResolutionRate > chatbotMetrics.previousYearResolutionRate ? 'text-green-500' : 'text-red-500'} font-medium`}>
+                      {chatbotMetrics.chatbotResolutionRate > chatbotMetrics.previousYearResolutionRate 
+                        ? `↑ Improved by ${chatbotMetrics.chatbotResolutionRate - chatbotMetrics.previousYearResolutionRate}%` 
+                        : `↓ Decreased by ${chatbotMetrics.previousYearResolutionRate - chatbotMetrics.chatbotResolutionRate}%`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* AI Resolution metrics */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center">
+              <Award size={16} className="mr-1 text-purple-500" /> AI Assistance (Silly AI)
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-purple-50 p-3 rounded">
+                  <p className="text-sm text-gray-500">AI-Handled Tickets</p>
+                  <p className="text-2xl font-bold">{aiMetrics.aiResolved}</p>
+                  {comparisonMode && prevYearData.staff && (
+                    <p className="text-xs text-gray-500 mt-1">vs last year</p>
+                  )}
+                </div>
+                <div className="bg-orange-50 p-3 rounded">
+                  <p className="text-sm text-gray-500">Total Responses</p>
+                  <p className="text-2xl font-bold">{aiMetrics.totalResolved}</p>
+                  {comparisonMode && prevYearData.staff && (
+                    <p className="text-xs text-gray-500 mt-1">vs last year</p>
+                  )}
+                </div>
+              </div>
+              
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <p className="text-sm font-medium">AI Resolution Rate</p>
+                  <p className="text-sm font-bold">{aiMetrics.aiResolutionRate}%</p>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div 
+                    className="bg-purple-500 h-3 rounded-full" 
+                    style={{ width: `${aiMetrics.aiResolutionRate}%` }}
+                  ></div>
+                </div>
+                
+                {comparisonMode && aiMetrics.previousYearAiResolutionRate > 0 && (
+                  <div className="mt-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-sm text-gray-500">Last Year Rate</p>
+                      <p className="text-sm">{aiMetrics.previousYearAiResolutionRate}%</p>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-purple-300 h-2 rounded-full" 
+                        style={{ width: `${aiMetrics.previousYearAiResolutionRate}%` }}
+                      ></div>
+                    </div>
+                    
+                    <p className={`text-xs mt-1 ${aiMetrics.aiResolutionRate > aiMetrics.previousYearAiResolutionRate ? 'text-green-500' : 'text-red-500'} font-medium`}>
+                      {aiMetrics.aiResolutionRate > aiMetrics.previousYearAiResolutionRate 
+                        ? `↑ Improved by ${aiMetrics.aiResolutionRate - aiMetrics.previousYearAiResolutionRate}%` 
+                        : `↓ Decreased by ${aiMetrics.previousYearAiResolutionRate - aiMetrics.aiResolutionRate}%`}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
