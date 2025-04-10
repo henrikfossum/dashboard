@@ -200,17 +200,26 @@ const Dashboard = ({ onLogout, token }) => {
   };
 
   const getAverageSatisfaction = () => {
-    if (!dashboardData.channelSummary || !dashboardData.channelSummary.aggregated) return 'N/A';
+    if (!dashboardData.channelSummary || 
+        !dashboardData.channelSummary.aggregated || 
+        dashboardData.channelSummary.aggregated.average_satisfaction_rating === null ||
+        dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined) {
+      return 'N/A';
+    }
     
     return dashboardData.channelSummary.aggregated.average_satisfaction_rating.toFixed(1);
   };
 
   const getActiveTickets = () => {
-    if (!dashboardData.channelSummary || !dashboardData.channelSummary.aggregated) return 'N/A';
+    if (!dashboardData.channelSummary || 
+        !dashboardData.channelSummary.aggregated || 
+        dashboardData.channelSummary.aggregated.active_conversations === null ||
+        dashboardData.channelSummary.aggregated.active_conversations === undefined) {
+      return 'N/A';
+    }
     
     return dashboardData.channelSummary.aggregated.active_conversations;
   };
-
   // Chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
