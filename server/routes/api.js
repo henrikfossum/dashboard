@@ -52,6 +52,8 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
     const brandsResult = await pool.query('SELECT * FROM brands');
     const brands = brandsResult.rows;
     
+    console.log(`[DEBUG] Found ${brands.length} brands`);
+    
     if (brands.length === 0) {
       return res.json({ channels: {}, aggregated: { active_conversations: 0, average_satisfaction_rating: 0 } });
     }
@@ -64,6 +66,8 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
           if (start_date && end_date) {
             url += `?start_date=${start_date}&end_date=${end_date}`;
           }
+          
+          console.log(`[DEBUG] Fetching data for brand: ${brand.name} from: ${url}`);
 
           const response = await axios.get(url, {
             auth: {
@@ -74,9 +78,23 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
               'Accept': 'application/json'
             }
           });
+          
+          // Log the first channel to see if it contains satisfaction data
+          const firstChannelKey = Object.keys(response.data.channels || {})[0];
+          if (firstChannelKey) {
+            const firstChannel = response.data.channels[firstChannelKey];
+            console.log(`[DEBUG] First channel for ${brand.name}:`, {
+              name: firstChannel.channel?.name,
+              hasSatisfactionRating: firstChannel.average_satisfaction_rating !== undefined,
+              satisfactionRating: firstChannel.average_satisfaction_rating
+            });
+          } else {
+            console.log(`[DEBUG] No channels found for ${brand.name}`);
+          }
+          
           return { brand: brand.name, data: response.data };
         } catch (error) {
-          console.error(`Error fetching channel summary for ${brand.name}:`, error.message);
+          console.error(`[ERROR] Error fetching channel summary for ${brand.name}:`, error.message);
           return { brand: brand.name, error: error.message };
         }
       })
@@ -94,10 +112,13 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
     };
 
     let validBrandsCount = 0;
+    let satisfactionRatingsFound = 0;
 
     brandsData.forEach(brandData => {
       if (brandData.data && brandData.data.channels) {
         validBrandsCount++;
+        
+        console.log(`[DEBUG] Processing ${Object.keys(brandData.data.channels).length} channels for ${brandData.brand}`);
         
         Object.entries(brandData.data.channels).forEach(([channel, data]) => {
           if (!aggregatedData.channels[channel]) {
@@ -110,7 +131,14 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
           
           aggregatedData.channels[channel].active_conversations += (data.active_conversations || 0);
           
-          if (data.average_satisfaction_rating) {
+          // Log each channel's satisfaction rating
+          console.log(`[DEBUG] Channel ${channel} - satisfaction rating:`, {
+            exists: data.average_satisfaction_rating !== undefined,
+            value: data.average_satisfaction_rating
+          });
+          
+          if (data.average_satisfaction_rating !== undefined && data.average_satisfaction_rating !== null) {
+            satisfactionRatingsFound++;
             aggregatedData.channels[channel].total_satisfaction_ratings += 1;
             aggregatedData.channels[channel].average_satisfaction_rating += data.average_satisfaction_rating;
             
@@ -132,18 +160,24 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
         channel.average_satisfaction_rating = 0;
       }
     });
+    
+    console.log(`[DEBUG] Total satisfaction ratings found: ${satisfactionRatingsFound}`);
+    console.log(`[DEBUG] Aggregated total_satisfaction_ratings: ${aggregatedData.aggregated.total_satisfaction_ratings}`);
+    console.log(`[DEBUG] Aggregated average_satisfaction_rating (before avg): ${aggregatedData.aggregated.average_satisfaction_rating}`);
 
     if (aggregatedData.aggregated.total_satisfaction_ratings > 0) {
       aggregatedData.aggregated.average_satisfaction_rating = parseFloat(
         (aggregatedData.aggregated.average_satisfaction_rating / aggregatedData.aggregated.total_satisfaction_ratings).toFixed(2)
       );
+      console.log(`[DEBUG] Final average_satisfaction_rating: ${aggregatedData.aggregated.average_satisfaction_rating}`);
     } else {
+      console.log(`[DEBUG] No satisfaction ratings found, setting average to 0`);
       aggregatedData.aggregated.average_satisfaction_rating = 0;
     }
 
     res.json(aggregatedData);
   } catch (err) {
-    console.error(err.message);
+    console.error(`[ERROR] Server error in channel-summary:`, err.message);
     res.status(500).json({ error: 'Server error', details: err.toString() });
   }
 });

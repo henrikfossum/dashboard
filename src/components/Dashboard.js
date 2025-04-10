@@ -629,24 +629,47 @@ const Dashboard = ({ onLogout, token }) => {
   };
 
   const getAverageSatisfaction = () => {
-    if (!dashboardData.channelSummary || 
-        !dashboardData.channelSummary.aggregated || 
-        dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
+    console.log('[DEBUG-FRONTEND] dashboardData:', dashboardData);
+    
+    if (!dashboardData.channelSummary) {
+      console.log('[DEBUG-FRONTEND] channelSummary is missing or null');
+      return { current: null, change: null };
+    }
+    
+    if (!dashboardData.channelSummary.aggregated) {
+      console.log('[DEBUG-FRONTEND] channelSummary.aggregated is missing or null');
+      return { current: null, change: null };
+    }
+    
+    console.log('[DEBUG-FRONTEND] channelSummary.aggregated:', dashboardData.channelSummary.aggregated);
+    console.log('[DEBUG-FRONTEND] average_satisfaction_rating:', 
+      dashboardData.channelSummary.aggregated.average_satisfaction_rating);
+    
+    if (dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
         dashboardData.channelSummary.aggregated.average_satisfaction_rating === null) {
+      console.log('[DEBUG-FRONTEND] average_satisfaction_rating is undefined or null');
       return { current: null, change: null };
     }
     
     const currentSatisfaction = dashboardData.channelSummary.aggregated.average_satisfaction_rating;
+    console.log('[DEBUG-FRONTEND] Current satisfaction value:', currentSatisfaction);
+    
+    if (currentSatisfaction === 0 && dashboardData.channelSummary.aggregated.total_satisfaction_ratings === 0) {
+      console.log('[DEBUG-FRONTEND] No satisfaction ratings found (value is 0)');
+      return { current: 'No Data', change: null };
+    }
     
     if (!comparisonMode || 
         !prevPeriodData.channelSummary || 
         !prevPeriodData.channelSummary.aggregated || 
         prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
         prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === null) {
+      console.log('[DEBUG-FRONTEND] Returning current only:', currentSatisfaction.toFixed(1));
       return { current: currentSatisfaction.toFixed(1), change: null };
     }
     
     const prevSatisfaction = prevPeriodData.channelSummary.aggregated.average_satisfaction_rating;
+    console.log('[DEBUG-FRONTEND] Previous satisfaction:', prevSatisfaction);
     
     return {
       current: currentSatisfaction.toFixed(1),
