@@ -90,7 +90,9 @@ router.get('/channel-summary', authenticateToken, async (req, res) => {
         average_satisfaction_rating: null,
         total_satisfaction_ratings: 0
       },
-      brands: brandsData
+      brands: brandsData,
+      start_date,
+      end_date
     };
 
     let validBrandsCount = 0;
@@ -216,6 +218,8 @@ router.get('/tags', authenticateToken, async (req, res) => {
 
     res.json({ 
       tags: aggregatedTags,
+      start_date,
+      end_date,
       brands: brandsData 
     });
   } catch (err) {
@@ -299,6 +303,8 @@ router.get('/staff', authenticateToken, async (req, res) => {
 
     res.json({ 
       report: aggregatedStaff,
+      start_date,
+      end_date,
       brands: brandsData 
     });
   } catch (err) {
@@ -346,18 +352,21 @@ router.get('/response-time', authenticateToken, async (req, res) => {
       })
     );
 
-    // Aggregate the data
+    // Aggregate the data with proper date filtering
     const aggregatedResponseTimes = {};
     let totalResponseTimeInRange = 0;
     let totalBrandsWithData = 0;
 
     brandsData.forEach(brandData => {
       if (brandData.data && brandData.data.response_times) {
+        // Only include dates within the requested range
         Object.entries(brandData.data.response_times).forEach(([date, seconds]) => {
-          if (!aggregatedResponseTimes[date]) {
-            aggregatedResponseTimes[date] = 0;
+          if ((!start_date || date >= start_date) && (!end_date || date <= end_date)) {
+            if (!aggregatedResponseTimes[date]) {
+              aggregatedResponseTimes[date] = 0;
+            }
+            aggregatedResponseTimes[date] += seconds;
           }
-          aggregatedResponseTimes[date] += seconds;
         });
         
         if (brandData.data.summary && brandData.data.summary.averages && brandData.data.summary.averages.in_range) {
@@ -379,6 +388,8 @@ router.get('/response-time', authenticateToken, async (req, res) => {
           in_range: averageResponseTimeInRange
         }
       },
+      start_date,
+      end_date,
       brands: brandsData 
     });
   } catch (err) {
@@ -387,7 +398,7 @@ router.get('/response-time', authenticateToken, async (req, res) => {
   }
 });
 
-// Aggregated Volume
+// Aggregated Volume with proper date filtering
 router.get('/volume', authenticateToken, async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
@@ -426,22 +437,27 @@ router.get('/volume', authenticateToken, async (req, res) => {
       })
     );
 
-    // Aggregate the data
+    // Aggregate the data with proper date filtering
     const aggregatedVolume = {};
 
     brandsData.forEach(brandData => {
       if (brandData.data && brandData.data.conversation_counts) {
+        // Only include dates within the requested range
         Object.entries(brandData.data.conversation_counts).forEach(([date, count]) => {
-          if (!aggregatedVolume[date]) {
-            aggregatedVolume[date] = 0;
+          if ((!start_date || date >= start_date) && (!end_date || date <= end_date)) {
+            if (!aggregatedVolume[date]) {
+              aggregatedVolume[date] = 0;
+            }
+            aggregatedVolume[date] += count;
           }
-          aggregatedVolume[date] += count;
         });
       }
     });
 
     res.json({ 
       conversation_counts: aggregatedVolume,
+      start_date,
+      end_date,
       brands: brandsData 
     });
   } catch (err) {
