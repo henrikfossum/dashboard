@@ -683,9 +683,9 @@ const Dashboard = ({ onLogout, token }) => {
                       <Pie
                         data={processTagsData()}
                         cx="50%"
-                        cy="45%" {/* Moved up slightly to make room for legend */}
-                        labelLine={false} {/* Disable label lines to reduce clutter */}
-                        outerRadius={60} {/* Reduced from 70 */}
+                        cy="45%" 
+                        labelLine={false} 
+                        outerRadius={60}
                         fill="#8884d8"
                         dataKey="value"
                         activeIndex={activeTagIndex}
