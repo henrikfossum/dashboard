@@ -183,7 +183,8 @@ const Dashboard = ({ onLogout, token }) => {
     
     const excludedTags = [
       'Auto Reply', 'VIP', 'Pre-order', 'Order Edited', 'No AI', 
-      'AI Error', 'Other', 'Chatbot', 'Auto Resolved', 'Chatbot solved'
+      'AI Error', 'Other', 'Chatbot', 'Auto Resolved', 'Chatbot solved', 'Out of Office', 'Spam',
+      'Returns - ParcelFeeder', 'Returns - ColliFlow'
     ];
     
     return Object.entries(dashboardData.tags.tags)
