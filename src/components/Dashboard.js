@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Sector } from 'recharts';
 import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap, Plus, X } from 'lucide-react';
 import BrandForm from './BrandForm';
 
@@ -24,6 +24,10 @@ const Dashboard = ({ onLogout, token }) => {
     minute: '2-digit',
     hour12: true
   }));
+  // Add new state variables for optimization
+  const [memoizedTagsData, setMemoizedTagsData] = useState([]);
+  const [fetchTimeout, setFetchTimeout] = useState(null);
+  const [activeTagIndex, setActiveTagIndex] = useState(null);
 
   // Fetch brands on component mount
   useEffect(() => {
@@ -54,72 +58,86 @@ const Dashboard = ({ onLogout, token }) => {
   // Fetch dashboard data when date range changes
   useEffect(() => {
     const fetchDashboardData = async () => {
+      // Clear any pending fetch
+      if (fetchTimeout) {
+        clearTimeout(fetchTimeout);
+      }
+      
+      // Set loading status and clear error
       setLoading(true);
       setError(null);
       
-      try {
-        // Calculate date range
-        const endDate = new Date().toISOString().split('T')[0];
-        let startDate;
-        
-        if (dateRange === '7d') {
-          const date = new Date();
-          date.setDate(date.getDate() - 7);
-          startDate = date.toISOString().split('T')[0];
-        } else if (dateRange === '30d') {
-          const date = new Date();
-          date.setDate(date.getDate() - 30);
-          startDate = date.toISOString().split('T')[0];
-        } else if (dateRange === 'month') {
-          const date = new Date();
-          date.setDate(1);
-          startDate = date.toISOString().split('T')[0];
+      // Use setTimeout to debounce fetch operations
+      const timeoutId = setTimeout(async () => {
+        try {
+          // Calculate date range
+          const endDate = new Date().toISOString().split('T')[0];
+          let startDate;
+          
+          if (dateRange === '7d') {
+            const date = new Date();
+            date.setDate(date.getDate() - 7);
+            startDate = date.toISOString().split('T')[0];
+          } else if (dateRange === '30d') {
+            const date = new Date();
+            date.setDate(date.getDate() - 30);
+            startDate = date.toISOString().split('T')[0];
+          } else if (dateRange === 'month') {
+            const date = new Date();
+            date.setDate(1);
+            startDate = date.toISOString().split('T')[0];
+          }
+
+          // Fetch all reports in parallel
+          const [channelRes, tagsRes, staffRes, responseTimeRes, volumeRes] = await Promise.all([
+            fetch(`/api/channel-summary?start_date=${startDate}&end_date=${endDate}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`/api/tags?start_date=${startDate}&end_date=${endDate}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`/api/staff?start_date=${startDate}&end_date=${endDate}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`/api/response-time?start_date=${startDate}&end_date=${endDate}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`/api/volume?start_date=${startDate}&end_date=${endDate}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            })
+          ]);
+
+          // Check if any requests failed
+          if (!channelRes.ok || !tagsRes.ok || !staffRes.ok || !responseTimeRes.ok || !volumeRes.ok) {
+            throw new Error('Failed to fetch some data from Re:Amaze API');
+          }
+
+          // Process responses
+          const channelData = await channelRes.json();
+          const tagsData = await tagsRes.json();
+          const staffData = await staffRes.json();
+          const responseTimeData = await responseTimeRes.json();
+          const volumeData = await volumeRes.json();
+
+          setDashboardData({
+            channelSummary: channelData,
+            tags: tagsData,
+            staff: staffData,
+            responseTime: responseTimeData,
+            volume: volumeData
+          });
+          
+          // Reset memoized data when new data comes in
+          setMemoizedTagsData([]);
+        } catch (error) {
+          console.error('Error fetching dashboard data:', error);
+          setError('Failed to load dashboard data. Please check your connection and try again.');
+        } finally {
+          setLoading(false);
         }
-
-        // Fetch all reports in parallel
-        const [channelRes, tagsRes, staffRes, responseTimeRes, volumeRes] = await Promise.all([
-          fetch(`/api/channel-summary?start_date=${startDate}&end_date=${endDate}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }),
-          fetch(`/api/tags?start_date=${startDate}&end_date=${endDate}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }),
-          fetch(`/api/staff?start_date=${startDate}&end_date=${endDate}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }),
-          fetch(`/api/response-time?start_date=${startDate}&end_date=${endDate}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }),
-          fetch(`/api/volume?start_date=${startDate}&end_date=${endDate}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          })
-        ]);
-
-        // Check if any requests failed
-        if (!channelRes.ok || !tagsRes.ok || !staffRes.ok || !responseTimeRes.ok || !volumeRes.ok) {
-          throw new Error('Failed to fetch some data from Re:Amaze API');
-        }
-
-        // Process responses
-        const channelData = await channelRes.json();
-        const tagsData = await tagsRes.json();
-        const staffData = await staffRes.json();
-        const responseTimeData = await responseTimeRes.json();
-        const volumeData = await volumeRes.json();
-
-        setDashboardData({
-          channelSummary: channelData,
-          tags: tagsData,
-          staff: staffData,
-          responseTime: responseTimeData,
-          volume: volumeData
-        });
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        setError('Failed to load dashboard data. Please check your connection and try again.');
-      } finally {
-        setLoading(false);
-      }
+      }, 300); // 300ms debounce
+      
+      setFetchTimeout(timeoutId);
     };
 
     fetchDashboardData();
@@ -178,8 +196,15 @@ const Dashboard = ({ onLogout, token }) => {
       .sort((a, b) => a.date.localeCompare(b.date));
   };
   
-
+  // Optimized processTagsData function with memoization
   const processTagsData = () => {
+    // Return memoized data if it exists and tags haven't changed
+    if (memoizedTagsData.length > 0 && 
+        dashboardData.tags && 
+        dashboardData.tags._cachedKey === dateRange) {
+      return memoizedTagsData;
+    }
+    
     if (!dashboardData.tags || !dashboardData.tags.tags) return [];
     
     const excludedTags = [
@@ -202,11 +227,19 @@ const Dashboard = ({ onLogout, token }) => {
       );
     };
     
-    return Object.entries(dashboardData.tags.tags)
+    const processed = Object.entries(dashboardData.tags.tags)
       .filter(([name]) => !isExcluded(name))
       .map(([name, count]) => ({ name, value: count }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
+    
+    // Store the processed data with a cache key
+    if (dashboardData.tags) {
+      dashboardData.tags._cachedKey = dateRange;
+      setMemoizedTagsData(processed);
+    }
+    
+    return processed;
   };
 
   const processStaffData = () => {
@@ -355,6 +388,33 @@ const Dashboard = ({ onLogout, token }) => {
 
   // Chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+
+  // Custom functions for enhanced pie chart
+  const onPieEnter = (_, index) => {
+    setActiveTagIndex(index);
+  };
+  
+  const onPieLeave = () => {
+    setActiveTagIndex(null);
+  };
+
+  const renderActiveShape = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    
+    return (
+      <g>
+        <Sector
+          cx={cx}
+          cy={cy}
+          innerRadius={innerRadius}
+          outerRadius={outerRadius + 5}
+          startAngle={startAngle}
+          endAngle={endAngle}
+          fill={fill}
+        />
+      </g>
+    );
+  };
 
   if (loading && !brands.length) {
     return (
@@ -605,7 +665,7 @@ const Dashboard = ({ onLogout, token }) => {
           )}
         </div>
         
-        {/* What People Ask About Section - Using only real tag data */}
+        {/* What People Ask About Section - Using only real tag data with IMPROVED PIE CHART */}
         <div className="bg-white p-6 rounded shadow">
           <div className="flex items-center mb-4">
             <MessageSquare className="text-orange-500 mr-2" size={20} />
@@ -617,32 +677,55 @@ const Dashboard = ({ onLogout, token }) => {
                 <TrendingUp size={16} className="mr-1 text-blue-500" /> Trending Tags
               </h3>
               {processTagsData().length > 0 ? (
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={processTagsData()}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={true}
-                      outerRadius={70}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label={({ name, percent }) => {
-                        // Truncate long names to prevent overlap
-                        const shortName = name.length > 12 ? name.substring(0, 10) + '...' : name;
-                        return `${shortName} ${(percent * 100).toFixed(0)}%`;
-                      }}
-                    >
-                      {processTagsData().map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value, name) => [value, name]} />
-                    <Legend layout="vertical" verticalAlign="bottom" align="center" />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="h-52"> {/* Fixed height container */}
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                      <Pie
+                        data={processTagsData()}
+                        cx="50%"
+                        cy="45%" {/* Moved up slightly to make room for legend */}
+                        labelLine={false} {/* Disable label lines to reduce clutter */}
+                        outerRadius={60} {/* Reduced from 70 */}
+                        fill="#8884d8"
+                        dataKey="value"
+                        activeIndex={activeTagIndex}
+                        activeShape={renderActiveShape}
+                        onMouseEnter={onPieEnter}
+                        onMouseLeave={onPieLeave}
+                        label={({ name, percent }) => {
+                          // Only show label for larger segments
+                          if (percent < 0.1) return null;
+                          
+                          // Extremely shortened label for pie segments
+                          return percent > 0.15 ? `${(percent * 100).toFixed(0)}%` : '';
+                        }}
+                      >
+                        {processTagsData().map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value, name) => {
+                          // Format the tooltip better
+                          return [`${value} tickets`, name];
+                        }}
+                        contentStyle={{ fontSize: '12px' }}
+                      />
+                      <Legend 
+                        layout="horizontal" 
+                        verticalAlign="bottom" 
+                        align="center"
+                        wrapperStyle={{ fontSize: '11px', paddingTop: '5px' }}
+                        formatter={(value) => {
+                          // Shorten legend labels
+                          return value.length > 15 ? `${value.substring(0, 15)}...` : value;
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="flex items-center justify-center h-40 text-gray-500">
                   No tag data available
                 </div>
               )}
@@ -675,8 +758,6 @@ const Dashboard = ({ onLogout, token }) => {
           </div>
         </div>
       </div>
-      
-      {/* Additional sections removed as requested */}
       
       {/* Show configured brands at bottom if we have some */}
       {brands.length > 0 && <div className="mt-8"><BrandsSection /></div>}
