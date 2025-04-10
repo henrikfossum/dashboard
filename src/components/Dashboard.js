@@ -274,7 +274,8 @@ const Dashboard = ({ onLogout, token }) => {
   const getAverageSatisfaction = () => {
     if (!dashboardData.channelSummary || 
         !dashboardData.channelSummary.aggregated || 
-        dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined) {
+        dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
+        dashboardData.channelSummary.aggregated.average_satisfaction_rating === null) {
       return 'N/A';
     }
     
