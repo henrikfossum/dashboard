@@ -181,7 +181,13 @@ const Dashboard = ({ onLogout, token }) => {
   const processTagsData = () => {
     if (!dashboardData.tags || !dashboardData.tags.tags) return [];
     
+    const excludedTags = [
+      'Auto Reply', 'VIP', 'Pre-order', 'Order Edited', 'No AI', 
+      'AI Error', 'Other', 'Chatbot', 'Auto Resolved', 'Chatbot solved'
+    ];
+    
     return Object.entries(dashboardData.tags.tags)
+      .filter(([name]) => !excludedTags.includes(name))
       .map(([name, count]) => ({ name, value: count }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
@@ -647,95 +653,8 @@ const Dashboard = ({ onLogout, token }) => {
           </div>
         </div>
       </div>
-
-      {/* Additional Insights Section - Using only real data */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold text-gray-700 mb-2">Response Time Breakdown</h3>
-          {dashboardData.responseTime && dashboardData.responseTime.summary && dashboardData.responseTime.summary.ratio ? (
-            <>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm">Under 1 Hour:</span>
-                <span className="font-bold">{Math.round(dashboardData.responseTime.summary.ratio.under_1_hour * 100)}%</span>
-              </div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm">Under 1 Day:</span>
-                <span className="font-bold">{Math.round(dashboardData.responseTime.summary.ratio.under_1_day * 100)}%</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Under 1 Week:</span>
-                <span className="font-bold">{Math.round(dashboardData.responseTime.summary.ratio.under_1_week * 100)}%</span>
-              </div>
-            </>
-          ) : (
-            <div className="text-gray-500 text-center py-4">No response time breakdown available</div>
-          )}
-        </div>
-
-        <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold text-gray-700 mb-2">Channel Distribution</h3>
-          {processChannelData().length > 0 ? (
-            processChannelData().map((channel, index) => (
-              <div key={index} className="flex justify-between items-center mb-2">
-                <span className="text-sm">{channel.name}:</span>
-                <div className="flex items-center">
-                  <div className="w-32 bg-gray-200 rounded-full h-2 mr-2">
-                    <div 
-                      className={`h-2 rounded-full`}
-                      style={{ 
-                        width: `${channel.percentage}%`,
-                        backgroundColor: COLORS[index % COLORS.length]
-                      }}
-                    ></div>
-                  </div>
-                  <span className="text-sm">{channel.percentage}%</span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-gray-500 text-center py-4">No channel data available</div>
-          )}
-        </div>
-
-        <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold text-gray-700 mb-2">Ticket Status Overview</h3>
-          {dashboardData.channelSummary && dashboardData.channelSummary.channels ? (
-            (() => {
-              // Calculate ticket counts by status
-              let active = 0;
-              let resolved = 0;
-              let archived = 0;
-              
-              Object.values(dashboardData.channelSummary.channels).forEach(channel => {
-                active += channel.active_conversations || 0;
-                resolved += channel.resolved_conversations || 0;
-                archived += channel.archived_conversations || 0;
-              });
-              
-              const total = active + resolved + archived;
-              
-              return (
-                <>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm">Active Tickets:</span>
-                    <span className="font-bold">{active} ({total > 0 ? Math.round(active/total*100) : 0}%)</span>
-                  </div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm">Resolved Tickets:</span>
-                    <span className="font-bold">{resolved} ({total > 0 ? Math.round(resolved/total*100) : 0}%)</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Archived Tickets:</span>
-                    <span className="font-bold">{archived} ({total > 0 ? Math.round(archived/total*100) : 0}%)</span>
-                  </div>
-                </>
-              );
-            })()
-          ) : (
-            <div className="text-gray-500 text-center py-4">No ticket status data available</div>
-          )}
-        </div>
-      </div>
+      
+      {/* Additional sections removed as requested */}
       
       {/* Show configured brands at bottom if we have some */}
       {brands.length > 0 && <div className="mt-8"><BrandsSection /></div>}
