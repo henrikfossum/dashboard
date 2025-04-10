@@ -629,47 +629,34 @@ const Dashboard = ({ onLogout, token }) => {
   };
 
   const getAverageSatisfaction = () => {
-    console.log('[DEBUG-FRONTEND] dashboardData:', dashboardData);
-    
-    if (!dashboardData.channelSummary) {
-      console.log('[DEBUG-FRONTEND] channelSummary is missing or null');
-      return { current: null, change: null };
-    }
-    
-    if (!dashboardData.channelSummary.aggregated) {
-      console.log('[DEBUG-FRONTEND] channelSummary.aggregated is missing or null');
-      return { current: null, change: null };
-    }
-    
-    console.log('[DEBUG-FRONTEND] channelSummary.aggregated:', dashboardData.channelSummary.aggregated);
-    console.log('[DEBUG-FRONTEND] average_satisfaction_rating:', 
-      dashboardData.channelSummary.aggregated.average_satisfaction_rating);
-    
-    if (dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
-        dashboardData.channelSummary.aggregated.average_satisfaction_rating === null) {
-      console.log('[DEBUG-FRONTEND] average_satisfaction_rating is undefined or null');
-      return { current: null, change: null };
-    }
-    
-    const currentSatisfaction = dashboardData.channelSummary.aggregated.average_satisfaction_rating;
-    console.log('[DEBUG-FRONTEND] Current satisfaction value:', currentSatisfaction);
-    
-    if (currentSatisfaction === 0 && dashboardData.channelSummary.aggregated.total_satisfaction_ratings === 0) {
-      console.log('[DEBUG-FRONTEND] No satisfaction ratings found (value is 0)');
+    // First check if we have dashboard data
+    if (!dashboardData.channelSummary || 
+        !dashboardData.channelSummary.aggregated) {
       return { current: 'No Data', change: null };
     }
     
+    const aggregated = dashboardData.channelSummary.aggregated;
+    
+    // Check if we have satisfaction rating data
+    if (aggregated.average_satisfaction_rating === null || 
+        aggregated.average_satisfaction_rating === undefined) {
+      return { current: 'No Data', change: null };
+    }
+    
+    // We have satisfaction data
+    const currentSatisfaction = aggregated.average_satisfaction_rating;
+    
+    // Only show comparison if we have previous data
     if (!comparisonMode || 
         !prevPeriodData.channelSummary || 
         !prevPeriodData.channelSummary.aggregated || 
-        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === undefined ||
-        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === null) {
-      console.log('[DEBUG-FRONTEND] Returning current only:', currentSatisfaction.toFixed(1));
+        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === null ||
+        prevPeriodData.channelSummary.aggregated.average_satisfaction_rating === undefined) {
       return { current: currentSatisfaction.toFixed(1), change: null };
     }
     
+    // We have both current and previous data
     const prevSatisfaction = prevPeriodData.channelSummary.aggregated.average_satisfaction_rating;
-    console.log('[DEBUG-FRONTEND] Previous satisfaction:', prevSatisfaction);
     
     return {
       current: currentSatisfaction.toFixed(1),
@@ -959,11 +946,11 @@ const Dashboard = ({ onLogout, token }) => {
             <ThumbsUp className="text-green-500 mr-2" size={20} />
             <h3 className="font-semibold">CSAT Score</h3>
           </div>
-          {getAverageSatisfaction().current !== null ? (
-            <p className="text-3xl font-bold mt-2">{getAverageSatisfaction().current}/5.0</p>
-          ) : (
-            <p className="text-3xl font-bold mt-2">No Data</p>
-          )}
+          <p className="text-3xl font-bold mt-2">
+            {getAverageSatisfaction().current === 'No Data' 
+              ? 'No Data' 
+              : `${getAverageSatisfaction().current}/5.0`}
+          </p>
           {comparisonMode && getAverageSatisfaction().change && (
             <p className={`text-sm ${getAverageSatisfaction().change.isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
               {getAverageSatisfaction().change.isPositive ? '↑' : '↓'} 
@@ -971,6 +958,7 @@ const Dashboard = ({ onLogout, token }) => {
             </p>
           )}
         </div>
+
         
         {/* Open Tickets KPI */}
         <div className="bg-white p-4 rounded shadow">
