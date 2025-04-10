@@ -1,4 +1,8 @@
-import React, { useState, useEffect } from 'react';
+{aiMetrics.aiResolutionRate > 0 && (
+          <>
+            {' '}<span className="font-bold text-yellow-300">Silly AI</span> has handled <span className="font-bold text-yellow-300">{aiMetrics.aiResolutionRate}%</span> of all conversations.
+          </>
+        )}import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Sector } from 'recharts';
 import { Clock, Inbox, ThumbsUp, MessageSquare, TrendingUp, Users, AlertTriangle, Zap, Plus, X, Bot, Award, Calendar } from 'lucide-react';
 import BrandForm from './BrandForm';
@@ -44,8 +48,8 @@ const Dashboard = ({ onLogout, token }) => {
     previousYearResolutionRate: 0
   });
   const [aiMetrics, setAiMetrics] = useState({
-    totalResolved: 0,
-    aiResolved: 0, 
+    totalConversations: 0,
+    aiHandledConversations: 0, 
     aiResolutionRate: 0,
     previousYearAiResolutionRate: 0
   });
@@ -286,24 +290,44 @@ const Dashboard = ({ onLogout, token }) => {
       chatbotResolutionRate
     }));
     
-    // Process AI metrics
-    const totalResolved = Object.values(staffData.report)
-      .reduce((sum, staff) => sum + (staff.response_count || 0), 0);
+    // Process AI metrics - based on conversations instead of responses
+    let totalConversations = 0;
+    let aiHandledConversations = 0;
     
-    // Count responses by "Silly AI"
-    const aiResolved = staffData.report["Silly AI ✨"] 
-      ? (staffData.report["Silly AI ✨"].response_count || 0) 
-      : 0;
+    // Get total conversation volume
+    if (dashboardData.volume && dashboardData.volume.conversation_counts) {
+      totalConversations = Object.values(dashboardData.volume.conversation_counts)
+        .reduce((sum, count) => sum + count, 0);
+    }
+    
+    // Calculate AI-handled conversations based on tags
+    Object.entries(tagsData.tags).forEach(([tag, count]) => {
+      const tagLower = tag.toLowerCase();
+      if (tagLower.includes('silly ai') || tagLower.includes('ai resolved')) {
+        aiHandledConversations += count;
+      }
+    });
+    
+    // If AI conversations are not tagged, estimate from staff data (fallback)
+    if (aiHandledConversations === 0 && staffData.report["Silly AI"]) {
+      // Use a better estimation than just response count
+      // Adjust this multiplier based on your domain knowledge of the average responses per conversation
+      const estimatedResponsesPerConversation = 2.5;
+      aiHandledConversations = Math.round((staffData.report["Silly AI"].response_count || 0) / estimatedResponsesPerConversation);
+      
+      // Make sure we don't exceed total conversations
+      aiHandledConversations = Math.min(aiHandledConversations, totalConversations);
+    }
     
     // Calculate AI resolution rate
-    const aiResolutionRate = totalResolved > 0 
-      ? Math.round((aiResolved / totalResolved) * 100) 
+    const aiResolutionRate = totalConversations > 0 
+      ? Math.round((aiHandledConversations / totalConversations) * 100) 
       : 0;
     
     setAiMetrics(prevMetrics => ({
       ...prevMetrics,
-      totalResolved,
-      aiResolved,
+      totalConversations,
+      aiHandledConversations,
       aiResolutionRate
     }));
   };
@@ -338,16 +362,36 @@ const Dashboard = ({ onLogout, token }) => {
       previousYearResolutionRate: prevYearChatbotResolutionRate
     }));
     
-    // Process previous year AI metrics
-    const prevYearTotalResolved = Object.values(prevYearStaffData.report)
-      .reduce((sum, staff) => sum + (staff.response_count || 0), 0);
+    // Process previous year AI metrics - based on conversations
+    let prevYearTotalConversations = 0;
+    let prevYearAiHandledConversations = 0;
     
-    const prevYearAiResolved = prevYearStaffData.report["Silly AI"] 
-      ? (prevYearStaffData.report["Silly AI"].response_count || 0) 
-      : 0;
+    // Get previous year total conversation volume
+    if (prevYearData.volume && prevYearData.volume.conversation_counts) {
+      prevYearTotalConversations = Object.values(prevYearData.volume.conversation_counts)
+        .reduce((sum, count) => sum + count, 0);
+    }
     
-    const prevYearAiResolutionRate = prevYearTotalResolved > 0 
-      ? Math.round((prevYearAiResolved / prevYearTotalResolved) * 100) 
+    // Calculate AI-handled conversations based on tags
+    Object.entries(prevYearTagsData.tags).forEach(([tag, count]) => {
+      const tagLower = tag.toLowerCase();
+      if (tagLower.includes('silly ai') || tagLower.includes('ai resolved')) {
+        prevYearAiHandledConversations += count;
+      }
+    });
+    
+    // If AI conversations are not tagged, estimate from staff data (fallback)
+    if (prevYearAiHandledConversations === 0 && prevYearStaffData.report["Silly AI"]) {
+      // Use a better estimation than just response count
+      const estimatedResponsesPerConversation = 2.5;
+      prevYearAiHandledConversations = Math.round((prevYearStaffData.report["Silly AI"].response_count || 0) / estimatedResponsesPerConversation);
+      
+      // Make sure we don't exceed total conversations
+      prevYearAiHandledConversations = Math.min(prevYearAiHandledConversations, prevYearTotalConversations);
+    }
+    
+    const prevYearAiResolutionRate = prevYearTotalConversations > 0 
+      ? Math.round((prevYearAiHandledConversations / prevYearTotalConversations) * 100) 
       : 0;
     
     setAiMetrics(prevMetrics => ({
@@ -850,9 +894,9 @@ const Dashboard = ({ onLogout, token }) => {
           </>
         )}
         
-        {aiMetrics.aiResolutionRate > 0 && (
+        {comparisonMode && aiMetrics.previousYearAiResolutionRate > 0 && (
           <>
-            {' '}<span className="font-bold text-yellow-300">Silly AI</span> has handled <span className="font-bold text-yellow-300">{aiMetrics.aiResolutionRate}%</span> of all tickets.
+            {' '}Last year, <span className="font-bold text-yellow-300">Silly AI</span> handled <span className="font-bold text-yellow-300">{aiMetrics.previousYearAiResolutionRate}%</span> of all tickets.
           </>
         )}
       </span>
@@ -1545,15 +1589,15 @@ const Dashboard = ({ onLogout, token }) => {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-purple-50 p-3 rounded">
-                  <p className="text-sm text-gray-500">AI-Handled Tickets</p>
-                  <p className="text-2xl font-bold">{aiMetrics.aiResolved}</p>
+                  <p className="text-sm text-gray-500">AI-Handled Conversations</p>
+                  <p className="text-2xl font-bold">{aiMetrics.aiHandledConversations}</p>
                   {comparisonMode && prevYearData.staff && (
                     <p className="text-xs text-gray-500 mt-1">vs last year</p>
                   )}
                 </div>
                 <div className="bg-orange-50 p-3 rounded">
-                  <p className="text-sm text-gray-500">Total Responses</p>
-                  <p className="text-2xl font-bold">{aiMetrics.totalResolved}</p>
+                  <p className="text-sm text-gray-500">Total Conversations</p>
+                  <p className="text-2xl font-bold">{aiMetrics.totalConversations}</p>
                   {comparisonMode && prevYearData.staff && (
                     <p className="text-xs text-gray-500 mt-1">vs last year</p>
                   )}
