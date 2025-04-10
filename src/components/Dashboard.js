@@ -291,8 +291,8 @@ const Dashboard = ({ onLogout, token }) => {
       .reduce((sum, staff) => sum + (staff.response_count || 0), 0);
     
     // Count responses by "Silly AI"
-    const aiResolved = staffData.report["Silly AI"] 
-      ? (staffData.report["Silly AI"].response_count || 0) 
+    const aiResolved = staffData.report["Silly AI ✨"] 
+      ? (staffData.report["Silly AI ✨"].response_count || 0) 
       : 0;
     
     // Calculate AI resolution rate
