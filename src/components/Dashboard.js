@@ -153,44 +153,29 @@ const Dashboard = ({ onLogout, token }) => {
     }
   };
 
-  // Process data for charts
+  // Process data for charts - using only real data
   const processVolumeData = () => {
     if (!dashboardData.volume || !dashboardData.volume.conversation_counts) return [];
     
-    return Object.entries(dashboardData.volume.conversation_counts).map(([date, count]) => ({
-      date,
-      current: count,
-      previous: Math.round(count * 0.9), // Simulate previous period data
-      lastYear: Math.round(count * 0.8)  // Simulate last year data
-    })).sort((a, b) => a.date.localeCompare(b.date));
+    // Convert to array format for the chart
+    return Object.entries(dashboardData.volume.conversation_counts)
+      .map(([date, count]) => ({
+        date,
+        count
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
   };
 
   const processResponseTimeData = () => {
     if (!dashboardData.responseTime || !dashboardData.responseTime.response_times) return [];
     
-    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const responseTimesEntries = Object.entries(dashboardData.responseTime.response_times);
-    
-    // Group by day of week and average the values
-    const dayAverages = {};
-    responseTimesEntries.forEach(([date, seconds]) => {
-      const dayIndex = new Date(date).getDay(); // 0 = Sunday, 1 = Monday, ...
-      const day = daysOfWeek[dayIndex === 0 ? 6 : dayIndex - 1]; // Adjust to Mon-Sun format
-      
-      if (!dayAverages[day]) {
-        dayAverages[day] = { total: 0, count: 0 };
-      }
-      
-      dayAverages[day].total += seconds;
-      dayAverages[day].count += 1;
-    });
-    
-    return daysOfWeek.map(day => ({
-      day,
-      current: dayAverages[day] ? Math.round(dayAverages[day].total / dayAverages[day].count / 60) : 0, // Convert to minutes
-      previous: dayAverages[day] ? Math.round(dayAverages[day].total / dayAverages[day].count / 60 * 1.15) : 0, // Simulate previous data (+15%)
-      lastYear: dayAverages[day] ? Math.round(dayAverages[day].total / dayAverages[day].count / 60 * 1.35) : 0 // Simulate last year data (+35%)
-    }));
+    // Convert to array format for the chart and convert seconds to minutes
+    return Object.entries(dashboardData.responseTime.response_times)
+      .map(([date, seconds]) => ({
+        date,
+        minutes: Math.round(seconds / 60)
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
   };
 
   const processTagsData = () => {
@@ -205,35 +190,83 @@ const Dashboard = ({ onLogout, token }) => {
   const processStaffData = () => {
     if (!dashboardData.staff || !dashboardData.staff.report) return [];
     
-    return Object.entries(dashboardData.staff.report).map(([name, data]) => ({
-      name,
-      satisfaction: 4 + Math.random() * 0.9, // Simulate satisfaction score between 4.0-4.9
-      tickets: data.response_count,
-      responseTime: Math.round(data.response_time_seconds / 60)
-    })).sort((a, b) => b.satisfaction - a.satisfaction).slice(0, 5);
+    return Object.entries(dashboardData.staff.report)
+      .map(([name, data]) => ({
+        name,
+        responseCount: data.response_count || 0,
+        appreciations: data.appreciations_count || 0,
+        responseTime: data.response_time_seconds ? Math.round(data.response_time_seconds / 60) : 0
+      }))
+      .sort((a, b) => b.responseCount - a.responseCount)
+      .slice(0, 5);
   };
 
-  const processSatisfactionData = () => {
-    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const processChannelData = () => {
+    if (!dashboardData.channelSummary || !dashboardData.channelSummary.channels) return [];
     
-    // Create simulated satisfaction data
-    return daysOfWeek.map(day => ({
-      day,
-      current: 4 + Math.random() * 0.6, // Between 4.0-4.6
-      previous: 3.9 + Math.random() * 0.5, // Between 3.9-4.4
-      lastYear: 3.8 + Math.random() * 0.4 // Between 3.8-4.2
+    const channels = dashboardData.channelSummary.channels;
+    const channelTypes = {};
+    
+    // Group by channel type
+    Object.values(channels).forEach(channelData => {
+      if (channelData.channel && channelData.channel.channel_type_name) {
+        const typeName = channelData.channel.channel_type_name;
+        if (!channelTypes[typeName]) {
+          channelTypes[typeName] = {
+            name: typeName,
+            active: 0,
+            total: 0
+          };
+        }
+        channelTypes[typeName].active += channelData.active_conversations || 0;
+        channelTypes[typeName].total += (channelData.active_conversations || 0) + 
+                                        (channelData.resolved_conversations || 0) + 
+                                        (channelData.archived_conversations || 0);
+      }
+    });
+    
+    // Convert to array and calculate percentages
+    const totalConversations = Object.values(channelTypes).reduce((sum, channel) => sum + channel.total, 0);
+    return Object.values(channelTypes).map(channel => ({
+      name: channel.name,
+      percentage: totalConversations > 0 ? Math.round(channel.total / totalConversations * 100) : 0,
+      active: channel.active
     }));
   };
 
   const getAverageResponseTime = () => {
-    if (!dashboardData.responseTime || !dashboardData.responseTime.summary) return '13.0 min';
+    if (!dashboardData.responseTime || 
+        !dashboardData.responseTime.summary || 
+        !dashboardData.responseTime.summary.averages) {
+      return 'N/A';
+    }
     
     const avgSeconds = dashboardData.responseTime.summary.averages.in_range;
+    if (avgSeconds < 60) return `${avgSeconds} sec`;
     return `${Math.round(avgSeconds / 60)} min`;
   };
 
+  const getResponseTimeChange = () => {
+    if (!dashboardData.responseTime || 
+        !dashboardData.responseTime.summary || 
+        !dashboardData.responseTime.summary.trends ||
+        !dashboardData.responseTime.summary.trends.last_7_days) {
+      return null;
+    }
+    
+    const changeRate = dashboardData.responseTime.summary.trends.last_7_days.change_rate;
+    const percentChange = Math.abs(Math.round(changeRate * 100));
+    
+    return {
+      value: `${percentChange}%`,
+      isImprovement: changeRate < 0 // Negative change rate is good for response time
+    };
+  };
+
   const getTotalTickets = () => {
-    if (!dashboardData.volume || !dashboardData.volume.conversation_counts) return '326';
+    if (!dashboardData.volume || !dashboardData.volume.conversation_counts) {
+      return 'N/A';
+    }
     
     return Object.values(dashboardData.volume.conversation_counts).reduce((sum, count) => sum + count, 0);
   };
@@ -241,9 +274,8 @@ const Dashboard = ({ onLogout, token }) => {
   const getAverageSatisfaction = () => {
     if (!dashboardData.channelSummary || 
         !dashboardData.channelSummary.aggregated || 
-        dashboardData.channelSummary.aggregated.average_satisfaction_rating === null ||
         dashboardData.channelSummary.aggregated.average_satisfaction_rating === undefined) {
-      return '4.3';
+      return 'N/A';
     }
     
     return dashboardData.channelSummary.aggregated.average_satisfaction_rating.toFixed(1);
@@ -252,29 +284,50 @@ const Dashboard = ({ onLogout, token }) => {
   const getActiveTickets = () => {
     if (!dashboardData.channelSummary || 
         !dashboardData.channelSummary.aggregated || 
-        dashboardData.channelSummary.aggregated.active_conversations === null ||
         dashboardData.channelSummary.aggregated.active_conversations === undefined) {
-      return '42';
+      return 'N/A';
     }
     
     return dashboardData.channelSummary.aggregated.active_conversations;
   };
 
-  // Most used templates - simulated data
-  const templateData = [
-    { name: 'Account Reset', count: 42 },
-    { name: 'Shipping Status', count: 38 },
-    { name: 'Return Policy', count: 32 },
-    { name: 'Payment Issues', count: 28 },
-    { name: 'Product Info', count: 25 }
-  ];
-
-  // Simulated channel distribution data
-  const channelDistribution = [
-    { name: 'Email', percentage: 45 },
-    { name: 'Chat', percentage: 32 },
-    { name: 'Phone', percentage: 23 }
-  ];
+  // Generate summary based only on real data
+  const generateSummary = () => {
+    const responseTimeChange = getResponseTimeChange();
+    const topTags = processTagsData();
+    const topStaff = processStaffData();
+    
+    const mainQuestion = topTags.length > 0 ? topTags[0].name : 'various issues';
+    const topPerformer = topStaff.length > 0 ? topStaff[0].name : 'the support team';
+    
+    return (
+      <span>
+        {topTags.length > 0 && (
+          <>The main question customers have is about <span className="font-bold text-yellow-300">{mainQuestion}</span>. </>
+        )}
+        
+        {topStaff.length > 0 && (
+          <><span className="font-bold text-yellow-300">{topPerformer}</span> has the highest number of responses. </>
+        )}
+        
+        {responseTimeChange && (
+          <>
+            Response times have{' '}
+            <span className="font-bold text-yellow-300">
+              {responseTimeChange.isImprovement ? 'improved' : 'increased'} by {responseTimeChange.value}
+            </span>.{' '}
+          </>
+        )}
+        
+        {getActiveTickets() !== 'N/A' && (
+          <>
+            Currently <span className="font-bold text-yellow-300">{getActiveTickets()}</span> active tickets 
+            require attention.
+          </>
+        )}
+      </span>
+    );
+  };
 
   // Chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -361,18 +414,14 @@ const Dashboard = ({ onLogout, token }) => {
           </div>
         </div>
         
-        {/* AI Summary Shoutbox */}
+        {/* Summary Box - Using only real data */}
         <div className="mt-4 bg-blue-600 text-white p-4 rounded-lg shadow">
           <div className="flex items-start">
             <Zap className="text-yellow-300 mr-3 mt-1 flex-shrink-0" size={24} />
             <div>
-              <h3 className="font-bold text-lg mb-2">AI Summary</h3>
+              <h3 className="font-bold text-lg mb-2">Dashboard Summary</h3>
               <p className="leading-relaxed">
-                This week the number of tickets is up <span className="font-bold text-yellow-300">12.4%</span> compared to last week, 
-                and the main question customers have is about <span className="font-bold text-yellow-300">account resets</span>. 
-                <span className="font-bold text-yellow-300"> {processStaffData()[0]?.name || 'Sarah Johnson'}</span> is leading the customer satisfaction ratings with a 
-                score of {processStaffData()[0]?.satisfaction.toFixed(1) || '4.8'}/5.0. Response times have improved by <span className="font-bold text-yellow-300">15.8%</span>, 
-                but the backlog is growing. Consider allocating more resources to the billing department.
+                {generateSummary()}
               </p>
             </div>
           </div>
@@ -387,31 +436,38 @@ const Dashboard = ({ onLogout, token }) => {
             <h3 className="font-semibold">Avg. Response Time</h3>
           </div>
           <p className="text-3xl font-bold mt-2">{getAverageResponseTime()}</p>
-          <p className="text-sm text-green-500 flex items-center">↓ 15% from previous period</p>
+          {getResponseTimeChange() && (
+            <p className={`text-sm ${getResponseTimeChange().isImprovement ? 'text-green-500' : 'text-red-500'} flex items-center`}>
+              {getResponseTimeChange().isImprovement ? '↓' : '↑'} {getResponseTimeChange().value} from previous period
+            </p>
+          )}
         </div>
+        
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <Inbox className="text-purple-500 mr-2" size={20} />
             <h3 className="font-semibold">Total Tickets</h3>
           </div>
           <p className="text-3xl font-bold mt-2">{getTotalTickets()}</p>
-          <p className="text-sm text-red-500 flex items-center">↑ 12% from previous period</p>
+          <p className="text-sm text-gray-500">For selected period</p>
         </div>
+        
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <ThumbsUp className="text-green-500 mr-2" size={20} />
             <h3 className="font-semibold">CSAT Score</h3>
           </div>
           <p className="text-3xl font-bold mt-2">{getAverageSatisfaction()}/5.0</p>
-          <p className="text-sm text-green-500 flex items-center">↑ 0.2 from previous period</p>
+          <p className="text-sm text-gray-500">Based on customer ratings</p>
         </div>
+        
         <div className="bg-white p-4 rounded shadow">
           <div className="flex items-center">
             <AlertTriangle className="text-yellow-500 mr-2" size={20} />
             <h3 className="font-semibold">Open Tickets</h3>
           </div>
           <p className="text-3xl font-bold mt-2">{getActiveTickets()}</p>
-          <p className="text-sm text-yellow-500 flex items-center">↑ 5 since yesterday</p>
+          <p className="text-sm text-yellow-500 flex items-center">Require attention</p>
         </div>
       </div>
       
@@ -437,28 +493,26 @@ const Dashboard = ({ onLogout, token }) => {
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-2xl font-bold">{getAverageResponseTime()}</p>
-                <p className="text-sm text-gray-500">Average (Last 7 days)</p>
+                <p className="text-sm text-gray-500">Average ({dateRange === '7d' ? 'Last 7 days' : dateRange === '30d' ? 'Last 30 days' : 'This month'})</p>
               </div>
-              <div className="text-right">
-                <p className="text-green-500 font-semibold">↓ 15.8%</p>
-                <p className="text-sm text-gray-500">vs Previous 7 days</p>
-              </div>
-              <div className="text-right">
-                <p className="text-green-500 font-semibold">↓ 35.1%</p>
-                <p className="text-sm text-gray-500">vs Last Year</p>
-              </div>
+              {getResponseTimeChange() && (
+                <div className="text-right">
+                  <p className={getResponseTimeChange().isImprovement ? "text-green-500 font-semibold" : "text-red-500 font-semibold"}>
+                    {getResponseTimeChange().isImprovement ? '↓' : '↑'} {getResponseTimeChange().value}
+                  </p>
+                  <p className="text-sm text-gray-500">vs Previous period</p>
+                </div>
+              )}
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={processResponseTimeData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" />
+              <XAxis dataKey="date" />
               <YAxis />
-              <Tooltip />
+              <Tooltip formatter={(value) => [`${value} min`, 'Response Time']} />
               <Legend />
-              <Line type="monotone" dataKey="current" stroke="#0088FE" name="Current Period" strokeWidth={2} />
-              <Line type="monotone" dataKey="previous" stroke="#888" name="Previous Period" strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="lastYear" stroke="#82ca9d" name="Last Year" strokeDasharray="3 3" />
+              <Line type="monotone" dataKey="minutes" stroke="#0088FE" name="Response Time (minutes)" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -473,15 +527,7 @@ const Dashboard = ({ onLogout, token }) => {
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-2xl font-bold">{getTotalTickets()}</p>
-                <p className="text-sm text-gray-500">Total (Last 7 days)</p>
-              </div>
-              <div className="text-right">
-                <p className="text-red-500 font-semibold">↑ 12.4%</p>
-                <p className="text-sm text-gray-500">vs Previous 7 days</p>
-              </div>
-              <div className="text-right">
-                <p className="text-red-500 font-semibold">↑ 27.3%</p>
-                <p className="text-sm text-gray-500">vs Last Year</p>
+                <p className="text-sm text-gray-500">Total ({dateRange === '7d' ? 'Last 7 days' : dateRange === '30d' ? 'Last 30 days' : 'This month'})</p>
               </div>
             </div>
           </div>
@@ -492,90 +538,50 @@ const Dashboard = ({ onLogout, token }) => {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="current" fill="#8884d8" name="Current Period" />
-              <Bar dataKey="previous" fill="#ccc" name="Previous Period" />
-              <Bar dataKey="lastYear" fill="#82ca9d" name="Last Year" />
+              <Bar dataKey="count" fill="#8884d8" name="Tickets" />
             </BarChart>
           </ResponsiveContainer>
         </div>
         
-        {/* Customer Satisfaction Section */}
+        {/* Staff Performance Section - Using only real data */}
         <div className="bg-white p-6 rounded shadow">
           <div className="flex items-center mb-4">
-            <ThumbsUp className="text-green-500 mr-2" size={20} />
-            <h2 className="text-xl font-bold">Customer Satisfaction</h2>
+            <Users className="text-green-500 mr-2" size={20} />
+            <h2 className="text-xl font-bold">Staff Performance</h2>
           </div>
-          <div className="mb-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-2xl font-bold">{getAverageSatisfaction()}/5.0</p>
-                <p className="text-sm text-gray-500">Average (Last 7 days)</p>
-              </div>
-              <div className="text-right">
-                <p className="text-green-500 font-semibold">↑ 0.2</p>
-                <p className="text-sm text-gray-500">vs Previous 7 days</p>
-              </div>
-              <div className="text-right">
-                <p className="text-green-500 font-semibold">↑ 0.4</p>
-                <p className="text-sm text-gray-500">vs Last Year</p>
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={processSatisfactionData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="day" />
-                  <YAxis domain={[3.5, 5]} />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="current" stroke="#00C49F" name="Current Period" strokeWidth={2} />
-                  <Line type="monotone" dataKey="previous" stroke="#888" name="Previous Period" strokeDasharray="5 5" />
-                  <Line type="monotone" dataKey="lastYear" stroke="#FF8042" name="Last Year" strokeDasharray="3 3" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div>
-              <div className="mb-2">
-                <h3 className="text-sm font-semibold text-gray-700">Surveys</h3>
-                <div className="flex items-center justify-between mt-1">
-                  <div>
-                    <p className="font-bold">245</p>
-                    <p className="text-xs text-gray-500">Sent</p>
-                  </div>
-                  <div>
-                    <p className="font-bold">198</p>
-                    <p className="text-xs text-gray-500">Received</p>
-                  </div>
-                  <div>
-                    <p className="font-bold">80.8%</p>
-                    <p className="text-xs text-gray-500">Response Rate</p>
-                  </div>
+          
+          {processStaffData().length > 0 ? (
+            <div className="space-y-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-1 px-1">
+                <span>Staff Member</span>
+                <div className="flex space-x-4">
+                  <span className="w-20 text-right">Responses</span>
+                  <span className="w-20 text-right">Appreciations</span>
+                  <span className="w-20 text-right">Avg. Time</span>
                 </div>
               </div>
-              <h3 className="text-sm font-semibold text-gray-700 mt-4">Rating per Employee (Last 7 days)</h3>
-              <div className="mt-2 space-y-2">
-                {processStaffData().map((employee, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <div className="w-1/3 truncate text-sm">{employee.name}</div>
-                    <div className="w-1/3 flex items-center">
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-green-500 h-2 rounded-full" 
-                          style={{ width: `${employee.satisfaction / 5 * 100}%` }}
-                        ></div>
-                      </div>
+              
+              {processStaffData().map((staff, index) => (
+                <div key={index} className="border-b pb-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold">{staff.name}</span>
+                    <div className="flex space-x-4">
+                      <span className="w-20 text-right">{staff.responseCount}</span>
+                      <span className="w-20 text-right">{staff.appreciations}</span>
+                      <span className="w-20 text-right">{staff.responseTime} min</span>
                     </div>
-                    <div className="w-1/3 text-right text-sm">{employee.satisfaction.toFixed(1)}/5.0</div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center h-40 text-gray-500">
+              No staff data available
+            </div>
+          )}
         </div>
         
-        {/* What People Ask About Section */}
+        {/* What People Ask About Section - Using only real tag data */}
         <div className="bg-white p-6 rounded shadow">
           <div className="flex items-center mb-4">
             <MessageSquare className="text-orange-500 mr-2" size={20} />
@@ -586,112 +592,147 @@ const Dashboard = ({ onLogout, token }) => {
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
                 <TrendingUp size={16} className="mr-1 text-blue-500" /> Trending Tags
               </h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={processTagsData()}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {processTagsData().map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {processTagsData().length > 0 ? (
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={processTagsData()}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {processTagsData().map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  No tag data available
+                </div>
+              )}
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                <Users size={16} className="mr-1 text-purple-500" /> Most Used Response Templates
+                <Users size={16} className="mr-1 text-purple-500" /> Top Tags by Volume
               </h3>
-              {templateData.map((template, index) => (
-                <div key={index} className="flex items-center justify-between mb-2">
-                  <div className="text-sm truncate pr-2">{template.name}</div>
-                  <div className="flex items-center">
-                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-2">
-                      <div 
-                        className="bg-purple-500 h-2 rounded-full" 
-                        style={{ width: `${template.count / Math.max(...templateData.map(t => t.count)) * 100}%` }}
-                      ></div>
+              {processTagsData().length > 0 ? (
+                processTagsData().map((tag, index) => (
+                  <div key={index} className="flex items-center justify-between mb-2">
+                    <div className="text-sm truncate pr-2">{tag.name}</div>
+                    <div className="flex items-center">
+                      <div className="w-32 bg-gray-200 rounded-full h-2 mr-2">
+                        <div 
+                          className="bg-purple-500 h-2 rounded-full" 
+                          style={{ width: `${tag.value / Math.max(...processTagsData().map(t => t.value)) * 100}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-gray-600 w-8 text-right">{tag.value}</div>
                     </div>
-                    <div className="text-xs text-gray-600 w-8 text-right">{template.count}</div>
                   </div>
+                ))
+              ) : (
+                <div className="flex items-center justify-center h-40 text-gray-500">
+                  No tag data available
                 </div>
-              ))}
-              <div className="mt-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Keyword Analysis</h3>
-                <div className="bg-gray-100 p-2 rounded text-sm">
-                  <div className="inline-block bg-blue-100 text-blue-800 rounded px-2 py-1 text-xs m-1">account access</div>
-                  <div className="inline-block bg-green-100 text-green-800 rounded px-2 py-1 text-xs m-1">shipping delay</div>
-                  <div className="inline-block bg-purple-100 text-purple-800 rounded px-2 py-1 text-xs m-1">password reset</div>
-                  <div className="inline-block bg-yellow-100 text-yellow-800 rounded px-2 py-1 text-xs m-1">payment failed</div>
-                  <div className="inline-block bg-red-100 text-red-800 rounded px-2 py-1 text-xs m-1">refund request</div>
-                  <div className="inline-block bg-blue-100 text-blue-800 rounded px-2 py-1 text-xs m-1">product defect</div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Additional Insights Section */}
+      {/* Additional Insights Section - Using only real data */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold text-gray-700 mb-2">Ticket Resolution Time</h3>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm">First Contact Resolution:</span>
-            <span className="font-bold">68%</span>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm">Avg. Resolution Time:</span>
-            <span className="font-bold">4.2 hours</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm">Tickets Resolved (7d):</span>
-            <span className="font-bold">284</span>
-          </div>
+          <h3 className="font-semibold text-gray-700 mb-2">Response Time Breakdown</h3>
+          {dashboardData.responseTime && dashboardData.responseTime.summary && dashboardData.responseTime.summary.ratio ? (
+            <>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">Under 1 Hour:</span>
+                <span className="font-bold">{Math.round(dashboardData.responseTime.summary.ratio.under_1_hour * 100)}%</span>
+              </div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">Under 1 Day:</span>
+                <span className="font-bold">{Math.round(dashboardData.responseTime.summary.ratio.under_1_day * 100)}%</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Under 1 Week:</span>
+                <span className="font-bold">{Math.round(dashboardData.responseTime.summary.ratio.under_1_week * 100)}%</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-500 text-center py-4">No response time breakdown available</div>
+          )}
         </div>
 
         <div className="bg-white p-4 rounded shadow">
           <h3 className="font-semibold text-gray-700 mb-2">Channel Distribution</h3>
-          {channelDistribution.map((channel, index) => (
-            <div key={index} className="flex justify-between items-center mb-2">
-              <span className="text-sm">{channel.name}:</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-2">
-                  <div 
-                    className={`h-2 rounded-full ${
-                      index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-green-500' : 'bg-purple-500'
-                    }`} 
-                    style={{ width: `${channel.percentage}%` }}
-                  ></div>
+          {processChannelData().length > 0 ? (
+            processChannelData().map((channel, index) => (
+              <div key={index} className="flex justify-between items-center mb-2">
+                <span className="text-sm">{channel.name}:</span>
+                <div className="flex items-center">
+                  <div className="w-32 bg-gray-200 rounded-full h-2 mr-2">
+                    <div 
+                      className={`h-2 rounded-full`}
+                      style={{ 
+                        width: `${channel.percentage}%`,
+                        backgroundColor: COLORS[index % COLORS.length]
+                      }}
+                    ></div>
+                  </div>
+                  <span className="text-sm">{channel.percentage}%</span>
                 </div>
-                <span className="text-sm">{channel.percentage}%</span>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <div className="text-gray-500 text-center py-4">No channel data available</div>
+          )}
         </div>
 
         <div className="bg-white p-4 rounded shadow">
-          <h3 className="font-semibold text-gray-700 mb-2">Team Performance</h3>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm">Team Utilization:</span>
-            <span className="font-bold">87%</span>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm">Backlog Change:</span>
-            <span className="font-bold text-red-500">+8%</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm">Avg. Handle Time:</span>
-            <span className="font-bold">18.5 min</span>
-          </div>
+          <h3 className="font-semibold text-gray-700 mb-2">Ticket Status Overview</h3>
+          {dashboardData.channelSummary && dashboardData.channelSummary.channels ? (
+            (() => {
+              // Calculate ticket counts by status
+              let active = 0;
+              let resolved = 0;
+              let archived = 0;
+              
+              Object.values(dashboardData.channelSummary.channels).forEach(channel => {
+                active += channel.active_conversations || 0;
+                resolved += channel.resolved_conversations || 0;
+                archived += channel.archived_conversations || 0;
+              });
+              
+              const total = active + resolved + archived;
+              
+              return (
+                <>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm">Active Tickets:</span>
+                    <span className="font-bold">{active} ({total > 0 ? Math.round(active/total*100) : 0}%)</span>
+                  </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm">Resolved Tickets:</span>
+                    <span className="font-bold">{resolved} ({total > 0 ? Math.round(resolved/total*100) : 0}%)</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Archived Tickets:</span>
+                    <span className="font-bold">{archived} ({total > 0 ? Math.round(archived/total*100) : 0}%)</span>
+                  </div>
+                </>
+              );
+            })()
+          ) : (
+            <div className="text-gray-500 text-center py-4">No ticket status data available</div>
+          )}
         </div>
       </div>
       
