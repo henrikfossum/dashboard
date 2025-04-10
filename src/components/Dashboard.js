@@ -182,7 +182,7 @@ const Dashboard = ({ onLogout, token }) => {
     if (!dashboardData.tags || !dashboardData.tags.tags) return [];
     
     const excludedTags = [
-      'Auto Reply', 'VIP', 'Pre-order', 'Order Edited', 'No AI', 
+      'Auto Reply', '💎 VIP', 'Pre-order', 'Order Edited', 'No AI', 
       'AI Error', 'Other', 'Chatbot', 'Auto Resolved', 'Chatbot solved', 'Out of Office', 'Spam',
       'Returns - ParcelFeeder', 'Returns - ColliFlow', '✨ Auto Reply', 'Out Of Office', 'chatbot'
     ];
