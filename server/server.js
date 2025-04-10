@@ -18,9 +18,10 @@ app.use('/api', apiRoutes);
 
 // Serve static assets in production
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/build')));
+  // Look for built files in the build directory at the root level
+  app.use(express.static(path.join(__dirname, '../build')));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/build/index.html'));
+    res.sendFile(path.join(__dirname, '../build/index.html'));
   });
 }
 
