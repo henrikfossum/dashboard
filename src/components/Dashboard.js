@@ -1412,6 +1412,17 @@ const Dashboard = ({ onLogout, token }) => {
                           return [`${value} tickets`, name];
                         }}
                         contentStyle={{ fontSize: '12px' }}
+                      />
+                      <Legend 
+                        layout="horizontal" 
+                        verticalAlign="bottom" 
+                        align="center"
+                        wrapperStyle={{ fontSize: '11px', paddingTop: '5px' }}
+                        formatter={(value) => {
+                          // Shorten legend labels
+                          return value.length > 15 ? `${value.substring(0, 15)}...` : value;
+                        }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
